@@ -1465,6 +1465,22 @@ def print_report(rid):
     <div class="footer">IDEI Auditor · %s · <span class="pnum"></span></div>
   </div>
 
+  <script>
+    (function autoPrint() {
+      function go() {
+        setTimeout(function () { 
+          window.print();
+        }, 50);
+      }
+      if (document.readyState === 'complete') go();
+      else window.addEventListener('load', go, { once: true });
+
+      window.addEventListener('afterprint', function () {
+        // puedes cerrar o redirigir si quieres
+        // window.close();
+      }, { once: true });
+    })();
+  </script>
 </body>
 </html>
 """ % (
