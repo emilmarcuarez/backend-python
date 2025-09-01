@@ -1000,6 +1000,10 @@ def delete_report(rid):
 # from .db import SessionLocal
 # from .models import Report, Site
 
+
+# from .db import SessionLocal
+# from .models import Report, Site
+
 def print_report(rid):
     db = SessionLocal()
     try:
@@ -1017,7 +1021,7 @@ def print_report(rid):
             except Exception:
                 return ""
 
-        # Bloques del JSON
+        # ====== Datos ======
         wp = rep.get("wp") or {}
         is_wp = bool(wp.get("is_wordpress") or rep.get("is_wordpress"))
         tls = rep.get("tls") or {}
@@ -1049,17 +1053,14 @@ def print_report(rid):
         wp_config_exposed = rep.get("wp_config_exposed")
         vulns = rep.get("vulns") or {}
 
-        # WP core
         wp_version = wp.get("version") or "n/d"
         wp_latest = wp.get("latest_version") or "n/d"
         wp_outdated = wp.get("outdated_core")
 
-        # Temas/plugins
         theme_candidates = wp.get("theme_candidates") or []
         plugins_map = wp.get("plugins") or {}
         plugins_list = list(plugins_map.keys())
 
-        # WPScan
         core_v = vulns.get("core") or {}
         core_count = int(core_v.get("count") or 0)
         plug_v = vulns.get("plugins") or {}
@@ -1091,26 +1092,18 @@ def print_report(rid):
         else:
             mixed_html = "<span class='ok'>✔ Sin contenido mixto</span>"
 
-        # Cookies / Headers pretty
         headers_html = "<span class='ok'>✔ Sin ausencias críticas</span>" if not headers_missing else "<ul class='list'>%s</ul>" % li(headers_missing)
         cookies_html = "<span class='ok'>✔ Cookies OK</span>" if not cookies_issues else "<ul class='list'>%s</ul>" % li(cookies_issues)
-
-        # Robots hints pretty
         robots_html = "<span class='ok'>✔ Nada sospechoso</span>" if not robots_hints else "<ul class='list'>%s</ul>" % li(robots_hints)
-
-        # Directorios/backups pretty
         open_dirs_html = "<span class='ok'>✔ No</span>" if not open_dirs else "<ul class='list'>%s</ul>" % li(open_dirs)
         backups_html = "<span class='ok'>✔ No</span>" if not exposed_backups else "<ul class='list'>%s</ul>" % li(exposed_backups)
 
-        # Plugins & temas (string corto)
         plugins_str = " · ".join(plugins_list) if plugins_list else "—"
         themes_str = ", ".join(theme_candidates) if theme_candidates else "—"
 
-        # Woo/GraphQL/JWT/ACF pretty
         def yn(val, ok="Sí", no="No", dash="—"):
             return ok if val is True else (no if val is False else dash)
 
-        # Acciones sugeridas
         acciones = []
         if headers_missing:
             acciones.append("Configurar cabeceras: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.")
@@ -1146,19 +1139,16 @@ def print_report(rid):
             acciones.append("Revisar permisos de WooCommerce REST (datos públicos).")
         if acf_rest in (True, 200, 401, 403):
             acciones.append("Validar campos ACF expuestos vía REST según permisos.")
-        if wp_outdated is True:
+        if wp.get("outdated_core") is True:
             acciones.append("Actualizar **núcleo de WordPress** a %s." % esc(wp_latest))
         if jquery_version and str(jquery_version).split(".")[0].isdigit():
             try:
                 mj = int(str(jquery_version).split(".")[0])
-                if mj < 3:
-                    acciones.append("Actualizar jQuery del tema/plantillas a rama 3.x o superior.")
+                if mj < 3: acciones.append("Actualizar jQuery a rama 3.x o superior.")
             except Exception:
                 pass
-
         acciones_html = "<span class='ok'>✔ Sin acciones críticas pendientes</span>" if not acciones else "<ul class='list'>%s</ul>" % li(acciones)
 
-        # WPScan breakdown blocks
         plugins_block = ""
         for slug, data in plug_v.items():
             if not data: 
@@ -1192,22 +1182,22 @@ def print_report(rid):
         # Tabla estructura SEO
         def row(label, value):
             return "<tr><td>%s</td><td style='text-align:right'><b>%s</b></td></tr>" % (esc(label), esc(value))
-        seo_struct_rows = []
-        seo_struct_rows.append(row("H1", seo_struct.get("h1", "—")))
-        seo_struct_rows.append(row("H2", seo_struct.get("h2", "—")))
-        seo_struct_rows.append(row("H3", seo_struct.get("h3", "—")))
-        seo_struct_rows.append(row("H4", seo_struct.get("h4", "—")))
-        seo_struct_rows.append(row("Párrafos (p)", seo_struct.get("p", "—")))
-        seo_struct_rows.append(row("Listas (ul)", seo_struct.get("ul", "—")))
-        seo_struct_rows.append(row("Listas (ol)", seo_struct.get("ol", "—")))
-        seo_struct_rows.append(row("Enlaces (a)", seo_struct.get("a", "—")))
-        seo_struct_rows.append(row("Imágenes (img)", seo_struct.get("img", "—")))
-        seo_struct_table = "<table class='table'><tbody>%s</tbody></table>" % "".join(seo_struct_rows)
-
+        seo_struct_rows = [
+            row("H1", seo_struct.get("h1", "—")),
+            row("H2", seo_struct.get("h2", "—")),
+            row("H3", seo_struct.get("h3", "—")),
+            row("H4", seo_struct.get("h4", "—")),
+            row("Párrafos (p)", seo_struct.get("p", "—")),
+            row("Listas (ul)", seo_struct.get("ul", "—")),
+            row("Listas (ol)", seo_struct.get("ol", "—")),
+            row("Enlaces (a)", seo_struct.get("a", "—")),
+            row("Imágenes (img)", seo_struct.get("img", "—")),
+        ]
+        seo_struct_table = "<table class='table zebra'><tbody>%s</tbody></table>" % "".join(seo_struct_rows)
         seo_struct_issues = seo_struct.get("issues") or []
         seo_struct_issues_html = ("<ul class='list'>%s</ul>" % "".join("<li>%s</li>" % esc(i) for i in seo_struct_issues)) if seo_struct_issues else "<span class='ok'>✔ Sin observaciones</span>"
 
-        # HTML
+        # ====== HTML ======
         html_out = """<!doctype html>
 <html lang="es">
 <head>
@@ -1216,9 +1206,8 @@ def print_report(rid):
 <title>Reporte #%d · %s</title>
 <style>
   :root{
-    /* Paleta clara moderna */
     --bg1:#f7f9fc; --bg2:#ffffff;
-    --paper:rgba(255,255,255,0.86);
+    --paper:#ffffff;
     --line:#e6eaf2;
     --ink:#0b1220; --muted:#6a768c;
     --ok:#16a34a; --warn:#b45309; --bad:#b91c1c;
@@ -1227,29 +1216,32 @@ def print_report(rid):
     --shadow:0 10px 30px rgba(17,24,39,.08);
   }
   *{box-sizing:border-box}
-  html,body{margin:0;padding:0;height:100%%;color:var(--ink);
-    font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,Roboto,Arial}
+  html,body{
+    margin:0;padding:0;height:100%%;color:var(--ink);
+    font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,Roboto,Arial;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
   body{
     background:
-      radial-gradient(1100px 520px at 8%% -10%%, rgba(59,130,246,0.10), transparent 60%%),
+      radial-gradient(1200px 520px at 8%% -10%%, rgba(59,130,246,0.10), transparent 60%%),
       radial-gradient(900px 500px at 100%% 20%%, rgba(16,185,129,0.10), transparent 60%%),
       linear-gradient(180deg, var(--bg1), var(--bg2));
-    background-attachment: fixed;
-    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
   }
   .wrap{max-width:1200px;margin:28px auto;padding:0 20px}
   header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
   .brand{display:flex;align-items:center;gap:12px}
-  .logo{width:30px;height:30px;border-radius:10px;
+  .logo{width:38px;height:38px;border-radius:12px;
     background:linear-gradient(135deg,var(--brand1),var(--brand2)); box-shadow:0 6px 18px rgba(17,24,39,.08)}
-  .title{font-weight:800;font-size:18px;letter-spacing:.2px}
+  .title{font-weight:800;font-size:20px;letter-spacing:.2px}
+  .actions{display:flex;gap:8px}
+  .btn{border:1px solid var(--line); background:#fff; border-radius:10px; padding:8px 12px; cursor:pointer; font-weight:600}
+  .btn:hover{box-shadow:0 6px 16px rgba(17,24,39,.08)}
   .meta{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);margin:6px 0 10px}
   .grid{display:grid;gap:16px}
   @media(min-width:980px){ .cols-2{grid-template-columns:1fr 1fr} .cols-3{grid-template-columns:1fr 1fr 1fr} }
 
   .card{
-    position:relative;background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:16px;
-    backdrop-filter: blur(10px) saturate(120%%); -webkit-backdrop-filter: blur(10px) saturate(120%%);
+    position:relative;background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:18px;
     box-shadow: var(--shadow);
   }
   .card::before{
@@ -1268,33 +1260,34 @@ def print_report(rid):
   .muted{color:var(--muted)}
   .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
 
-  /* Hero + Puntaje */
   .hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
   .score-donut{
-    --p:%d; /* porcentaje (0-100) */
-    width:96px;height:96px;border-radius:50%%; position:relative;
+    --p:%d; width:100px;height:100px;border-radius:50%%; position:relative;
     background:conic-gradient(var(--brand1) calc(var(--p)*1%%), rgba(0,0,0,0.07) 0);
     box-shadow: inset 0 0 0 1px var(--line), 0 8px 24px rgba(17,24,39,.06);
     display:grid; place-items:center;
   }
-  .score-donut::before{
-    content:""; position:absolute; inset:6px; border-radius:50%%; background:#ffffff;
-  }
-  .score-donut span{position:relative; font-weight:800; font-size:20px; color:var(--ink)}
+  .score-donut::before{content:""; position:absolute; inset:8px; border-radius:50%%; background:#ffffff}
+  .score-donut span{position:relative; font-weight:800; font-size:22px}
 
   .scorebar{height:10px;background:#eef2f9;border-radius:999px;overflow:hidden}
   .scorefill{height:100%%;width:%d%%%%;background:linear-gradient(90deg,var(--brand1),var(--brand2))}
 
-  .list{padding-left:18px;margin:6px 0}
-  .list li{margin:4px 0}
   .table{width:100%%;border-collapse:collapse; font-size:13px}
   .table td,.table th{border-top:1px solid var(--line);padding:8px 0;word-break:break-word}
-  pre{white-space:pre-wrap; word-wrap:break-word; background:#fafcff; padding:12px; border-radius:12px; border:1px solid var(--line)}
+  .table.zebra tr:nth-child(even) td{background:#fafcff}
+  .list{padding-left:18px;margin:6px 0}
+  .list li{margin:4px 0}
+  pre{
+    white-space:pre-wrap; word-wrap:break-word; background:#fafcff; padding:12px;
+    border-radius:12px; border:1px solid var(--line)
+  }
 
   footer.note{margin:24px 0 10px;color:var(--muted);font-size:12px;text-align:center}
 
-  /* Impresión */
+  /* Impresión: sin sombras fuertes, sin efectos conflictivos */
   @media print{
+    .actions{display:none!important}
     body{background:#fff}
     .card{break-inside:avoid; box-shadow:none; border-color:#e5e7eb}
     .logo{box-shadow:none}
@@ -1307,22 +1300,26 @@ def print_report(rid):
     <header>
       <div class="brand">
         <div class="logo"></div>
-        <div class="title">IDEI Auditor · Reporte de Seguridad WordPress</div>
+        <div>
+          <div class="title">IDEI Auditor · Reporte de Seguridad WordPress</div>
+          <div class="meta">
+            <div><b>Sitio:</b> %s</div>
+            <div><b>ID:</b> %d</div>
+            <div><b>Fecha:</b> %s</div>
+          </div>
+        </div>
       </div>
-      <div class="pill" title="Riesgo">%s · <b>%s</b></div>
+      <div class="actions">
+        <button class="btn" onclick="window.print()">🖨️ Exportar PDF</button>
+        <span class="pill" title="Riesgo">%s · <b>%s</b></span>
+      </div>
     </header>
-
-    <div class="meta">
-      <div><b>Sitio:</b> %s</div>
-      <div><b>ID:</b> %d</div>
-      <div><b>Fecha:</b> %s</div>
-    </div>
 
     <div class="card">
       <div class="hero">
         <div class="score-donut"><span>%d</span></div>
-        <div style="flex:1;min-width:220px">
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <div style="flex:1;min-width:260px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
             <span class="pill"><b>WordPress:</b> %s</span>
             <span class="pill"><b>Versión:</b> %s</span>
             <span class="pill"><b>Última:</b> %s</span>
@@ -1477,20 +1474,24 @@ def print_report(rid):
     <footer class="note">Generado por IDEI Auditor · %s</footer>
   </div>
 
-  <script>window.print()</script>
+  <script>
+    // Evita PDF en blanco: imprime cuando todo cargó
+    window.addEventListener('load', function(){
+      // Si deseas autoimprimir al abrir, descomenta:
+      // window.print();
+    });
+  </script>
 </body>
 </html>
 """ % (
             rep_obj.id, esc(url),
 
-            # Donut y barra: usan score_val
+            # Donut/Barra
             score_val, score_val,
 
-            # Header riesgo pill
-            grade, risk,
-
-            # Meta
+            # Meta + riesgo
             esc(url), rep_obj.id, rep_obj.created_at.isoformat(),
+            grade, risk,
 
             # Donut número
             score_val,
@@ -1581,7 +1582,8 @@ def print_report(rid):
             themes_block,
 
             # Score details + Acciones
-            esc(score_val),  # ya incluido visualmente; si quieres puedes añadir más contexto
+            # (si quieres, reemplaza por tu score_details_html)
+            "<span class='muted'>Ver detalles de penalizaciones en versión extendida.</span>",
             acciones_html,
 
             # Anexo + footer
@@ -1592,6 +1594,7 @@ def print_report(rid):
         return Response(html_out, mimetype="text/html; charset=utf-8")
     finally:
         db.close()
+
 
 
 # Para WSGI
