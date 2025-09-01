@@ -995,15 +995,6 @@ def delete_report(rid):
 
 @app.route("/reports/<int:rid>/print", methods=["GET"])
 
-
-# Asumo que ya tienes estos importados en tu proyecto:
-# from .db import SessionLocal
-# from .models import Report, Site
-
-
-# from .db import SessionLocal
-# from .models import Report, Site
-
 def print_report(rid):
     db = SessionLocal()
     try:
@@ -1016,12 +1007,10 @@ def print_report(rid):
         url = site.url
 
         def esc(x):
-            try:
-                return html.escape(str(x))
-            except Exception:
-                return ""
+            try: return html.escape(str(x))
+            except Exception: return ""
 
-        # ====== Datos ======
+        # ===== Datos base =====
         wp = rep.get("wp") or {}
         is_wp = bool(wp.get("is_wordpress") or rep.get("is_wordpress"))
         tls = rep.get("tls") or {}
@@ -1066,25 +1055,22 @@ def print_report(rid):
         plug_v = vulns.get("plugins") or {}
         theme_v = vulns.get("themes") or {}
 
-        def li(items):
-            return "".join("<li>%s</li>" % esc(i) for i in items if i)
+        def li(items): return "".join("<li>%s</li>" % esc(i) for i in items if i)
 
         def list_vuln_items(vlist, max_items=10):
-            if not vlist:
-                return "<li>—</li>"
+            if not vlist: return "<li>—</li>"
             items = []
             for v in vlist[:max_items]:
                 title = v.get("title") or "Vulnerabilidad"
                 cve = (v.get("cve") or [""])[0] if isinstance(v.get("cve"), list) else (v.get("cve") or "")
                 cvss = v.get("cvss") or ""
-                badge = (" <span class='pill pill-warn'>CVE %s</span>" % esc(cve)) if cve else ""
+                badge = (" <span class='chip chip-warn'>CVE %s</span>" % esc(cve)) if cve else ""
                 score = (" <span class='muted'>(CVSS %s)</span>" % esc(cvss)) if cvss else ""
                 items.append("<li>%s%s%s</li>" % (esc(title), badge, score))
             if len(vlist) > max_items:
                 items.append("<li>… y %d más</li>" % (len(vlist)-max_items))
             return "".join(items)
 
-        # Mixed content pretty
         if mixed:
             rows = "".join("<tr><td>%s</td></tr>" % esc(u) for u in mixed[:20])
             more = "<tr><td>… y %d más</td></tr>" % (len(mixed)-20) if len(mixed) > 20 else ""
@@ -1139,43 +1125,35 @@ def print_report(rid):
             acciones.append("Revisar permisos de WooCommerce REST (datos públicos).")
         if acf_rest in (True, 200, 401, 403):
             acciones.append("Validar campos ACF expuestos vía REST según permisos.")
-        if wp.get("outdated_core") is True:
+        if wp_outdated is True:
             acciones.append("Actualizar **núcleo de WordPress** a %s." % esc(wp_latest))
         if jquery_version and str(jquery_version).split(".")[0].isdigit():
             try:
                 mj = int(str(jquery_version).split(".")[0])
                 if mj < 3: acciones.append("Actualizar jQuery a rama 3.x o superior.")
-            except Exception:
-                pass
+            except Exception: pass
+
         acciones_html = "<span class='ok'>✔ Sin acciones críticas pendientes</span>" if not acciones else "<ul class='list'>%s</ul>" % li(acciones)
 
+        # Bloques WPScan
         plugins_block = ""
         for slug, data in plug_v.items():
-            if not data: 
-                continue
+            if not data: continue
             cnt = int(data.get("count") or 0)
             ver = data.get("version") or "n/d"
-            plugins_block += "<div class='kv'><b>%s</b> v%s · %d vulns</div><ul class='list'>%s</ul>" % (
-                esc(slug), esc(ver), cnt, list_vuln_items(data.get("items") or [])
-            )
-        if not plugins_block:
-            plugins_block = "<div class='kv'>—</div>"
+            plugins_block += "<div class='kv'><b>%s</b> v%s · %d vulns</div><ul class='list'>%s</ul>" % (esc(slug), esc(ver), cnt, list_vuln_items(data.get("items") or []))
+        if not plugins_block: plugins_block = "<div class='kv'>—</div>"
 
         themes_block = ""
         for slug, data in theme_v.items():
-            if not data:
-                continue
+            if not data: continue
             cnt = int(data.get("count") or 0)
             ver = data.get("version") or "n/d"
-            themes_block += "<div class='kv'><b>%s</b> v%s · %d vulns</div><ul class='list'>%s</ul>" % (
-                esc(slug), esc(ver), cnt, list_vuln_items(data.get("items") or [])
-            )
-        if not themes_block:
-            themes_block = "<div class='kv'>—</div>"
+            themes_block += "<div class='kv'><b>%s</b> v%s · %d vulns</div><ul class='list'>%s</ul>" % (esc(slug), esc(ver), cnt, list_vuln_items(data.get("items") or []))
+        if not themes_block: themes_block = "<div class='kv'>—</div>"
 
         score_val = int(rep_obj.score or 0)
-        if score_val < 0: score_val = 0
-        if score_val > 100: score_val = 100
+        score_val = max(0, min(100, score_val))
         grade = rep.get("grade") or "—"
         risk  = rep.get("risk_level") or "—"
 
@@ -1197,338 +1175,341 @@ def print_report(rid):
         seo_struct_issues = seo_struct.get("issues") or []
         seo_struct_issues_html = ("<ul class='list'>%s</ul>" % "".join("<li>%s</li>" % esc(i) for i in seo_struct_issues)) if seo_struct_issues else "<span class='ok'>✔ Sin observaciones</span>"
 
-        # ====== HTML ======
+        # ===== HTML (sin transparencias, colores planos) =====
         html_out = """<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Reporte #%d · %s</title>
+<title>Escáner de seguridad WordPress · Reporte #%d</title>
 <style>
   :root{
-    --bg1:#f7f9fc; --bg2:#ffffff;
-    --paper:#ffffff;
-    --line:#e6eaf2;
-    --ink:#0b1220; --muted:#6a768c;
+    /* Colores planos (sin transparencias) */
+    --bg:#f5f7fb; --paper:#ffffff; --ink:#0b1220; --muted:#6a768c;
+    --line:#e6eaf2; --brand:#1f7ae0; --brand2:#0fa878; --accent:#111827;
     --ok:#16a34a; --warn:#b45309; --bad:#b91c1c;
-    --brand1:#3b82f6; --brand2:#10b981;
-    --chip:#f3f6ff;
-    --shadow:0 10px 30px rgba(17,24,39,.08);
   }
-  *{box-sizing:border-box}
-  html,body{
-    margin:0;padding:0;height:100%%;color:var(--ink);
-    font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,Roboto,Arial;
+  @page{ margin:20mm }
+  *{ box-sizing:border-box }
+  html,body{ margin:0; padding:0; color:var(--ink);
+    font:14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Roboto, Arial;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
-  body{
-    background:
-      radial-gradient(1200px 520px at 8%% -10%%, rgba(59,130,246,0.10), transparent 60%%),
-      radial-gradient(900px 500px at 100%% 20%%, rgba(16,185,129,0.10), transparent 60%%),
-      linear-gradient(180deg, var(--bg1), var(--bg2));
+  body{ background:var(--bg) }
+  .wrap{ max-width:960px; margin:0 auto; padding:0 8mm }
+  .page{ page-break-after:always; }
+  .no-break{ page-break-inside:avoid }
+  .hrow{ height:8mm }
+
+  /* Portada */
+  .cover{ background:var(--paper); border:1px solid var(--line); margin:15mm auto; padding:22mm 18mm; }
+  .cover .kicker{ color:#1f2937; font-weight:700; letter-spacing:.08em; text-transform:uppercase; font-size:12px }
+  .cover h1{ font-size:44px; line-height:1.1; margin:8mm 0 2mm 0; font-weight:900; color:var(--brand) }
+  .cover h2{ font-size:20px; margin:0 0 16mm; color:#1f2937; font-weight:700 }
+  .cover .band{ height:12mm; background:var(--brand); color:#fff; display:flex; align-items:center; padding:0 8mm; font-weight:700 }
+  .cover .meta{ margin-top:12mm; color:var(--muted) }
+  .cover .meta div{ margin:2mm 0 }
+
+  /* Índice */
+  .toc{ background:var(--paper); border:1px solid var(--line); padding:10mm 10mm; }
+  .toc h2{ font-size:22px; margin:0 0 6mm; font-weight:800 }
+  .toc ol{ list-style:none; padding:0; margin:0 }
+  .toc li{ display:flex; justify-content:space-between; border-bottom:1px solid var(--line); padding:3mm 0; }
+  .toc li b{ color:#0f172a }
+
+  /* Secciones / Tarjetas */
+  .section{ background:var(--paper); border:1px solid var(--line); margin:7mm 0; }
+  .section .title{
+    background:var(--brand); color:#fff; font-weight:800; letter-spacing:.02em;
+    padding:6mm 8mm; font-size:16px; display:flex; align-items:center; justify-content:space-between
   }
-  .wrap{max-width:1200px;margin:28px auto;padding:0 20px}
-  header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
-  .brand{display:flex;align-items:center;gap:12px}
-  .logo{width:38px;height:38px;border-radius:12px;
-    background:linear-gradient(135deg,var(--brand1),var(--brand2)); box-shadow:0 6px 18px rgba(17,24,39,.08)}
-  .title{font-weight:800;font-size:20px;letter-spacing:.2px}
-  .actions{display:flex;gap:8px}
-  .btn{border:1px solid var(--line); background:#fff; border-radius:10px; padding:8px 12px; cursor:pointer; font-weight:600}
-  .btn:hover{box-shadow:0 6px 16px rgba(17,24,39,.08)}
-  .meta{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);margin:6px 0 10px}
-  .grid{display:grid;gap:16px}
-  @media(min-width:980px){ .cols-2{grid-template-columns:1fr 1fr} .cols-3{grid-template-columns:1fr 1fr 1fr} }
+  .section .body{ padding:6mm 8mm }
 
-  .card{
-    position:relative;background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:18px;
-    box-shadow: var(--shadow);
-  }
-  .card::before{
-    content:""; position:absolute; inset:0; border-radius:16px; padding:1px; pointer-events:none;
-    background:linear-gradient(135deg, rgba(59,130,246,0.35), rgba(16,185,129,0.30));
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor; mask-composite: exclude;
-  }
+  .grid{ display:grid; gap:5mm }
+  .cols-2{ grid-template-columns:1fr 1fr }
+  .cols-3{ grid-template-columns:repeat(3, 1fr) }
 
-  h2.section{font-size:15px;margin:0 0 10px;letter-spacing:.3px}
-  .kv{display:inline-flex;align-items:center;gap:6px; padding:6px 10px; margin:4px 6px 0 0;
-      border:1px solid var(--line); border-radius:999px; background:#f9fbff}
-  .pill{display:inline-flex;align-items:center;gap:6px; padding:4px 10px; border-radius:999px;
-        font-size:12px; border:1px solid var(--line); background:var(--chip)}
-  .pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
-  .muted{color:var(--muted)}
-  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  .kv{ display:inline-block; background:#eef4ff; border:1px solid var(--line); padding:2mm 4mm; margin:1mm; border-radius:6px; }
+  .chip{ display:inline-block; background:#eef4ff; border:1px solid var(--line); padding:1mm 4mm; border-radius:999px; font-size:12px; }
+  .chip-warn{ background:#fff4ea; border-color:#ffe0c2 }
+  .ok{ color:var(--ok) } .warn{ color:var(--warn) } .bad{ color:var(--bad) }
+  .muted{ color:var(--muted) }
 
-  .hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
-  .score-donut{
-    --p:%d; width:100px;height:100px;border-radius:50%%; position:relative;
-    background:conic-gradient(var(--brand1) calc(var(--p)*1%%), rgba(0,0,0,0.07) 0);
-    box-shadow: inset 0 0 0 1px var(--line), 0 8px 24px rgba(17,24,39,.06);
-    display:grid; place-items:center;
-  }
-  .score-donut::before{content:""; position:absolute; inset:8px; border-radius:50%%; background:#ffffff}
-  .score-donut span{position:relative; font-weight:800; font-size:22px}
+  .table{ width:100%%; border-collapse:collapse; font-size:13px }
+  .table td,.table th{ border-top:1px solid var(--line); padding:3mm 0; word-break:break-word }
+  .table.zebra tr:nth-child(even) td{ background:#f9fbff }
 
-  .scorebar{height:10px;background:#eef2f9;border-radius:999px;overflow:hidden}
-  .scorefill{height:100%%;width:%d%%%%;background:linear-gradient(90deg,var(--brand1),var(--brand2))}
+  .list{ padding-left:6mm; margin:2mm 0 }
+  .list li{ margin:1.5mm 0 }
 
-  .table{width:100%%;border-collapse:collapse; font-size:13px}
-  .table td,.table th{border-top:1px solid var(--line);padding:8px 0;word-break:break-word}
-  .table.zebra tr:nth-child(even) td{background:#fafcff}
-  .list{padding-left:18px;margin:6px 0}
-  .list li{margin:4px 0}
-  pre{
-    white-space:pre-wrap; word-wrap:break-word; background:#fafcff; padding:12px;
-    border-radius:12px; border:1px solid var(--line)
-  }
+  /* Barra de score (plana, sin RGBA) */
+  .scorebar{ height:8px; background:#e6eaf2; border-radius:999px; overflow:hidden }
+  .scorefill{ height:100%%; width:%d%%%%; background:linear-gradient(90deg, var(--brand), var(--brand2)) }
 
-  footer.note{margin:24px 0 10px;color:var(--muted);font-size:12px;text-align:center}
-
-  /* Impresión: sin sombras fuertes, sin efectos conflictivos */
-  @media print{
-    .actions{display:none!important}
-    body{background:#fff}
-    .card{break-inside:avoid; box-shadow:none; border-color:#e5e7eb}
-    .logo{box-shadow:none}
-    .score-donut{box-shadow:none}
-  }
+  /* Footer con numeración */
+  .footer{ text-align:center; color:var(--muted); font-size:12px; margin:6mm 0 10mm }
+  .pnum:after{ counter-increment: page; content: counter(page) }
 </style>
 </head>
 <body>
+
   <div class="wrap">
-    <header>
-      <div class="brand">
-        <div class="logo"></div>
-        <div>
-          <div class="title">IDEI Auditor · Reporte de Seguridad WordPress</div>
-          <div class="meta">
-            <div><b>Sitio:</b> %s</div>
-            <div><b>ID:</b> %d</div>
-            <div><b>Fecha:</b> %s</div>
-          </div>
-        </div>
+    <!-- PORTADA -->
+    <div class="page cover no-break">
+      <div class="kicker">IDEI Auditor</div>
+      <h1>Escáner de seguridad WordPress</h1>
+      <h2>Resumen ejecutivo del Sitio Analizado</h2>
+      <div class="band">Reporte #%d</div>
+      <div class="meta">
+        <div><b>Sitio:</b> %s</div>
+        <div><b>Fecha:</b> %s</div>
+        <div><b>Puntaje:</b> %d · <b>Grade:</b> %s · <b>Riesgo:</b> %s</div>
       </div>
-      <div class="actions">
-        <button class="btn" onclick="window.print()">🖨️ Exportar PDF</button>
-        <span class="pill" title="Riesgo">%s · <b>%s</b></span>
-      </div>
-    </header>
+    </div>
 
-    <div class="card">
-      <div class="hero">
-        <div class="score-donut"><span>%d</span></div>
-        <div style="flex:1;min-width:260px">
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-            <span class="pill"><b>WordPress:</b> %s</span>
-            <span class="pill"><b>Versión:</b> %s</span>
-            <span class="pill"><b>Última:</b> %s</span>
-            <span class="pill %s"><b>Core desactualizado:</b> %s</span>
-            <span class="pill"><b>Servidor:</b> %s</span>
-            <span class="pill"><b>Powered-By:</b> %s</span>
-            <span class="pill"><b>Grade:</b> %s</span>
+    <!-- INDICE -->
+    <div class="page toc">
+      <h2>Índice</h2>
+      <ol>
+        <li><span>Resumen técnico</span><b>3</b></li>
+        <li><span>Servidor / CDN / WAF</span><b>4</b></li>
+        <li><span>Host</span><b>4</b></li>
+        <li><span>REST & Enumeración</span><b>4</b></li>
+        <li><span>Cabeceras y Cookies</span><b>5</b></li>
+        <li><span>WordPress</span><b>5</b></li>
+        <li><span>Contenido Mixto</span><b>6</b></li>
+        <li><span>Archivos/Directorios</span><b>6</b></li>
+        <li><span>Performance</span><b>7</b></li>
+        <li><span>Privacidad</span><b>7</b></li>
+        <li><span>SEO</span><b>8</b></li>
+        <li><span>APIs/Integraciones</span><b>9</b></li>
+        <li><span>Vulnerabilidades (WPScan)</span><b>10</b></li>
+        <li><span>Acciones sugeridas</span><b>11</b></li>
+        <li><span>Anexo</span><b>12</b></li>
+      </ol>
+    </div>
+
+    <!-- RESUMEN -->
+    <div class="section no-break">
+      <div class="title">Resumen técnico</div>
+      <div class="body">
+        <div class="grid cols-3">
+          <div>
+            <div class="kv"><b>WordPress:</b> %s</div>
+            <div class="kv"><b>Versión:</b> %s</div>
+            <div class="kv"><b>Última:</b> %s</div>
+            <div class="kv"><b>Core desactualizado:</b> %s</div>
           </div>
-          <div class="scorebar"><div class="scorefill"></div></div>
+          <div>
+            <div class="kv"><b>Servidor:</b> %s</div>
+            <div class="kv"><b>Powered-By:</b> %s</div>
+            <div class="kv"><b>CDN:</b> %s</div>
+            <div class="kv"><b>WAF:</b> %s</div>
+          </div>
+          <div>
+            <div class="kv"><b>TLS:</b> %s</div>
+            <div class="kv"><b>Expira (días):</b> %s</div>
+            <div class="kv"><b>Puntaje:</b> %d</div>
+            <div class="scorebar no-break" style="margin-top:6px"><div class="scorefill"></div></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="grid cols-3" style="margin-top:16px">
-      <div class="card">
-        <h2 class="section">Servidor / CDN / WAF</h2>
-        <div class="kv"><b>Vendor:</b> %s</div>
-        <div class="kv"><b>Version:</b> %s</div>
-        <div class="kv"><b>CDN:</b> %s</div>
-        <div class="kv"><b>WAF:</b> %s</div>
-        <div class="kv"><b>TLS:</b> %s</div>
-        <div class="kv"><b>Expira (días):</b> %s</div>
+    <!-- BLOQUES TECNICOS -->
+    <div class="grid cols-3">
+      <div class="section">
+        <div class="title">Servidor / CDN / WAF</div>
+        <div class="body">
+          <div class="kv"><b>Vendor:</b> %s</div>
+          <div class="kv"><b>Version:</b> %s</div>
+          <div class="kv"><b>CDN:</b> %s</div>
+          <div class="kv"><b>WAF:</b> %s</div>
+        </div>
       </div>
 
-      <div class="card">
-        <h2 class="section">Host</h2>
-        <div class="kv"><b>IP:</b> %s</div>
-        <div class="kv"><b>rDNS:</b> %s</div>
-        <div class="kv"><b>Staging:</b> %s</div>
+      <div class="section">
+        <div class="title">Host</div>
+        <div class="body">
+          <div class="kv"><b>IP:</b> %s</div>
+          <div class="kv"><b>rDNS:</b> %s</div>
+          <div class="kv"><b>Staging:</b> %s</div>
+        </div>
       </div>
 
-      <div class="card">
-        <h2 class="section">REST & Enumeración</h2>
-        <div class="kv"><b>Rutas:</b> %s</div>
-        <div class="kv"><b>/wp/v2/users:</b> %s</div>
-        <div class="kv"><b>CORS:</b> %s</div>
-        <div class="kv"><b>/?author=</b> Enumeración probada</div>
+      <div class="section">
+        <div class="title">REST & Enumeración</div>
+        <div class="body">
+          <div class="kv"><b>Rutas:</b> %s</div>
+          <div class="kv"><b>/wp/v2/users:</b> %s</div>
+          <div class="kv"><b>CORS:</b> %s</div>
+          <div class="kv"><b>/?author=</b> Enumeración probada</div>
+        </div>
       </div>
     </div>
 
-    <div class="grid cols-2" style="margin-top:16px">
-      <div class="card">
-        <h2 class="section">Cabeceras de seguridad</h2>
-        %s
+    <div class="grid cols-2">
+      <div class="section">
+        <div class="title">Cabeceras de seguridad</div>
+        <div class="body">%s</div>
+      </div>
+      <div class="section">
+        <div class="title">Cookies</div>
+        <div class="body">%s</div>
       </div>
 
-      <div class="card">
-        <h2 class="section">Cookies</h2>
-        %s
+      <div class="section">
+        <div class="title">WordPress</div>
+        <div class="body">
+          <ul class="list">
+            %s
+            %s
+            %s
+            %s
+            <li><b>Temas:</b> %s</li>
+            <li><b>Plugins:</b> %s</li>
+          </ul>
+        </div>
       </div>
 
-      <div class="card">
-        <h2 class="section">WordPress</h2>
-        <ul class="list">
-          %s
-          %s
-          %s
-          %s
-          <li>Temas: %s</li>
-          <li>Plugins: %s</li>
-        </ul>
+      <div class="section">
+        <div class="title">Contenido mixto</div>
+        <div class="body">%s</div>
       </div>
 
-      <div class="card">
-        <h2 class="section">Contenido mixto</h2>
-        %s
+      <div class="section">
+        <div class="title">Archivos/Directorios</div>
+        <div class="body">
+          <div class="kv"><b>Listados activos:</b></div>%s
+          <div class="kv" style="margin-top:3mm"><b>Backups/Logs expuestos:</b></div>%s
+          <div class="kv" style="display:block;margin-top:3mm"><b>license.txt expuesto:</b> %s</div>
+          <div class="kv" style="display:block;margin-top:2mm"><b>wp-config.php expuesto:</b> %s</div>
+        </div>
       </div>
 
-      <div class="card">
-        <h2 class="section">Archivos/Directorios</h2>
-        <div class="kv"><b>Listados activos:</b></div>
-        %s
-        <div class="kv"><b>Backups/Logs expuestos:</b></div>
-        %s
-        <div class="kv"><b>license.txt expuesto:</b> %s</div>
-        <div class="kv"><b>wp-config.php expuesto:</b> %s</div>
+      <div class="section">
+        <div class="title">Performance</div>
+        <div class="body">
+          <div class="kv"><b>TTFB:</b> %s ms</div>
+          <div class="kv"><b>Compresión:</b> %s</div>
+          <div class="kv"><b>Tamaño HTML:</b> %s KB</div>
+          <div class="kv"><b>Cache-Control:</b> %s</div>
+        </div>
       </div>
 
-      <div class="card">
-        <h2 class="section">Performance</h2>
-        <div class="kv"><b>TTFB:</b> %s ms</div>
-        <div class="kv"><b>Compresión:</b> %s</div>
-        <div class="kv"><b>Tamaño HTML:</b> %s KB</div>
-        <div class="kv"><b>Cache-Control:</b> %s</div>
+      <div class="section">
+        <div class="title">Privacidad</div>
+        <div class="body">
+          <div class="kv"><b>GA:</b> %s</div>
+          <div class="kv"><b>GTM:</b> %s</div>
+          <div class="kv"><b>Facebook Pixel:</b> %s</div>
+          <div class="kv"><b>mailto:</b> %s</div>
+        </div>
       </div>
 
-      <div class="card">
-        <h2 class="section">Privacidad</h2>
-        <div class="kv"><b>GA:</b> %s</div>
-        <div class="kv"><b>GTM:</b> %s</div>
-        <div class="kv"><b>Facebook Pixel:</b> %s</div>
-        <div class="kv"><b>mailto:</b> %s</div>
-      </div>
-
-      <div class="card">
-        <h2 class="section">SEO básico</h2>
-        <div class="kv"><b>Title:</b> %s</div>
-        <div class="kv"><b>Description:</b> %s</div>
-        <div class="kv"><b>Robots meta:</b> %s</div>
-        <div class="kv"><b>robots.txt (pistas sensibles):</b></div>
-        %s
-      </div>
-
-      <div class="card">
-        <h2 class="section">Estructura SEO de la Página</h2>
-        %s
-        <div style="margin-top:8px">
-          <div class="kv"><b>Observaciones:</b></div>
+      <div class="section">
+        <div class="title">SEO básico</div>
+        <div class="body">
+          <div class="kv" style="display:block"><b>Title:</b> %s</div>
+          <div class="kv" style="display:block;margin-top:2mm"><b>Description:</b> %s</div>
+          <div class="kv" style="display:block;margin-top:2mm"><b>Robots meta:</b> %s</div>
+          <div class="kv" style="display:block;margin-top:2mm"><b>robots.txt (pistas sensibles):</b></div>
           %s
         </div>
       </div>
 
-      <div class="card">
-        <h2 class="section">APIs/Integraciones</h2>
-        <div class="kv"><b>admin-ajax:</b> %s</div>
-        <div class="kv"><b>wp-cron.php:</b> %s</div>
-        <div class="kv"><b>oEmbed:</b> %s</div>
-        <div class="kv"><b>JWT:</b> %s</div>
-        <div class="kv"><b>GraphQL:</b> %s</div>
-        <div class="kv"><b>Woo REST:</b> %s</div>
-        <div class="kv"><b>ACF REST:</b> %s</div>
-        <div class="kv"><b>jQuery:</b> %s</div>
+      <div class="section">
+        <div class="title">Estructura SEO de la Página</div>
+        <div class="body">
+          %s
+          <div style="margin-top:3mm"><b>Observaciones:</b> %s</div>
+        </div>
       </div>
 
-      <div class="card" style="grid-column:1/-1">
-        <h2 class="section">Vulnerabilidades (WPScan)</h2>
+      <div class="section">
+        <div class="title">APIs/Integraciones</div>
+        <div class="body">
+          <div class="kv"><b>admin-ajax:</b> %s</div>
+          <div class="kv"><b>wp-cron.php:</b> %s</div>
+          <div class="kv"><b>oEmbed:</b> %s</div>
+          <div class="kv"><b>JWT:</b> %s</div>
+          <div class="kv"><b>GraphQL:</b> %s</div>
+          <div class="kv"><b>Woo REST:</b> %s</div>
+          <div class="kv"><b>ACF REST:</b> %s</div>
+          <div class="kv"><b>jQuery:</b> %s</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section no-break">
+      <div class="title">Vulnerabilidades (WPScan)</div>
+      <div class="body">
         <div class="kv"><b>Núcleo:</b> %s vulnerabilidades</div>
-        <div style="margin-top:8px">
-          <h3 style="font-size:13px;margin:10px 0 6px">Plugins</h3>
-          %s
-          <h3 style="font-size:13px;margin:14px 0 6px">Temas</h3>
-          %s
-        </div>
-      </div>
-
-      <div class="card" style="grid-column:1/-1">
-        <h2 class="section">Desglose de Puntaje</h2>
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Plugins</h3>
         %s
-      </div>
-
-      <div class="card" style="grid-column:1/-1">
-        <h2 class="section">Acciones sugeridas</h2>
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Temas</h3>
         %s
       </div>
     </div>
 
-    <div class="card" style="margin-top:16px">
-      <h2 class="section">Anexo · JSON completo</h2>
-      <pre>%s</pre>
+    <div class="section no-break">
+      <div class="title">Acciones sugeridas</div>
+      <div class="body">%s</div>
     </div>
 
-    <footer class="note">Generado por IDEI Auditor · %s</footer>
+    <div class="section page">
+      <div class="title">Anexo · JSON completo</div>
+      <div class="body"><pre>%s</pre></div>
+    </div>
+
+    <div class="footer">IDEI Auditor · %s · <span class="pnum"></span></div>
   </div>
 
-  <script>
-    // Evita PDF en blanco: imprime cuando todo cargó
-    window.addEventListener('load', function(){
-      // Si deseas autoimprimir al abrir, descomenta:
-      // window.print();
-    });
-  </script>
 </body>
 </html>
 """ % (
-            rep_obj.id, esc(url),
-
-            # Donut/Barra
-            score_val, score_val,
-
-            # Meta + riesgo
-            esc(url), rep_obj.id, rep_obj.created_at.isoformat(),
-            grade, risk,
-
-            # Donut número
+            # portada + scorebar width
+            rep_obj.id, 
             score_val,
 
-            # Chips resumen
+            # portada meta
+            rep_obj.id,
+            esc(url),
+            rep_obj.created_at.isoformat(),
+            score_val, esc(rep.get("grade") or "—"), esc(rep.get("risk_level") or "—"),
+
+            # resumen técnico
             ("Sí" if is_wp else "No"),
             esc(wp_version),
             esc(wp_latest),
-            ("bad" if wp_outdated else "ok") if isinstance(wp_outdated, bool) else "",
             ("Sí" if wp_outdated else ("No" if wp_outdated is False else "—")),
             esc(rep.get("server","—")),
             esc(rep.get("x_powered_by","—")),
-            grade,
-
-            # Servidor/CDN/WAF
-            esc(server_fp.get("vendor") or "—"),
-            esc(server_fp.get("version") or "—"),
             esc(waf_cdn.get("cdn") or "—"),
             esc(waf_cdn.get("waf") or "—"),
             esc(tls.get("protocol") or "—"),
             esc(str(tls.get("days_to_expiry")) if tls.get("days_to_expiry") is not None else "—"),
+            score_val,
 
-            # Host
+            # bloques técnicos
+            esc(server_fp.get("vendor") or "—"),
+            esc(server_fp.get("version") or "—"),
+            esc(waf_cdn.get("cdn") or "—"),
+            esc(waf_cdn.get("waf") or "—"),
+
             esc(host.get("ip") or "—"),
             esc(host.get("rdns") or "—"),
             ("Sí" if staging else "No"),
 
-            # REST
             esc(rest.get("routes_count") or "—"),
             ("Abierto" if rest.get("users_endpoint_open") is True else ("Restringido" if rest.get("users_endpoint_open") is False else "—")),
             ("Inseguro (*)" if rest.get("cors_unsafe") is True else ("OK" if rest.get("cors_unsafe") is False else "—")),
 
-            # Cabeceras / Cookies
+            # cabeceras / cookies
             headers_html,
             cookies_html,
 
-            # WordPress detalles
+            # wordpress
             ("<li>/readme.html expuesto</li>" if wp.get("readme_exposed") else ""),
             ("<li>/xmlrpc.php accesible</li>" if wp.get("xmlrpc_accessible") else ""),
             ("<li>/wp-login.php expuesto</li>" if wp.get("wp_login_exposed") else ""),
@@ -1536,35 +1517,35 @@ def print_report(rid):
             esc(themes_str),
             esc(plugins_str),
 
-            # Mixed
+            # contenido mixto
             mixed_html,
 
-            # Archivos/dirs
+            # archivos/dirs
             open_dirs_html,
             backups_html,
             ("Sí" if license_exposed else "No"),
             ("Sí" if wp_config_exposed else "No"),
 
-            # Performance
+            # performance
             esc(str(perf.get("ttfb_ms") or "—")),
             esc(str(perf.get("gzip_br") or "—")),
             esc(str(perf.get("html_size_kb") or "—")),
             esc(str(perf.get("cache_control") or "—")),
 
-            # Privacidad
+            # privacidad
             ("Sí" if ((privacy.get("tracking") or {}).get("ga")) else "No"),
             ("Sí" if ((privacy.get("tracking") or {}).get("gtm")) else "No"),
             ("Sí" if ((privacy.get("tracking") or {}).get("fbp")) else "No"),
             ("Sí" if privacy.get("mailto_found") else "No"),
 
-            # SEO básico
+            # SEO básico + robots
             esc(seo.get("title") or "—"),
             esc(seo.get("meta_description") or "—"),
             esc(seo.get("robots_meta") or "—"),
             robots_html,
 
             # Estructura SEO
-            seo_struct_table, seo_struct_issues_html,
+            seo_struct_table, (("<span class='ok'>✔ Sin observaciones</span>") if not seo_struct_issues else ("<ul class='list'>%s</ul>" % "".join("<li>%s</li>" % esc(i) for i in seo_struct_issues))),
 
             # APIs/Integraciones
             yn(admin_ajax_open),
@@ -1576,14 +1557,12 @@ def print_report(rid):
             yn(acf_rest in (True, 200, 401, 403)),
             esc(jquery_version or "—"),
 
-            # Vulns
+            # WPScan
             str(core_count),
             plugins_block,
             themes_block,
 
-            # Score details + Acciones
-            # (si quieres, reemplaza por tu score_details_html)
-            "<span class='muted'>Ver detalles de penalizaciones en versión extendida.</span>",
+            # Acciones
             acciones_html,
 
             # Anexo + footer
@@ -1594,6 +1573,7 @@ def print_report(rid):
         return Response(html_out, mimetype="text/html; charset=utf-8")
     finally:
         db.close()
+
 
 
 
