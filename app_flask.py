@@ -34,9 +34,9 @@ if db_url.startswith("postgresql://"):
 engine = create_engine(
     db_url, 
     pool_pre_ping=True,
-    pool_size=5,           # Reducir tamaño del pool
-    max_overflow=10,       # Reducir overflow máximo
-    pool_recycle=3600      # Reciclar conexiones cada hora
+    pool_size=5,          
+    max_overflow=10,       
+    pool_recycle=3600     
 )
 
 
@@ -65,7 +65,7 @@ Base.metadata.create_all(bind=engine)
 
 app = Flask(__name__)
 
-# Define allowed origins for CORS
+
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
@@ -75,11 +75,11 @@ ALLOWED_ORIGINS = [
 CORS(
     app,
     resources={r"/*": {"origins": ALLOWED_ORIGINS}},
-    supports_credentials=False,  # True solo si usas cookies/sesiones de navegador
+    supports_credentials=False, 
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
     expose_headers=["Content-Disposition"],
-    max_age=86400,   # cachea el preflight
+    max_age=86400,  
 )
 
 UA = {"User-Agent": "IDEI-Auditor/1.0 (+contacto@idei.example)"}
@@ -88,7 +88,7 @@ SECURITY_HEADERS = [
     "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy"
 ]
 
-# timeouts "conservadores" (connect, read)
+
 CONNECT_TIMEOUT = 3
 READ_TIMEOUT = 6
 REQ_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
@@ -96,16 +96,16 @@ REQ_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
 def make_session():
     s = requests.Session()
     retries = Retry(
-        total=2,               # 2 reintentos como máximo
+        total=2,              
         connect=1,
         read=1,
-        backoff_factor=0.5,    # backoff más agresivo
+        backoff_factor=0.5,    
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=frozenset(["GET", "POST"])
     )
     adapter = HTTPAdapter(
-        pool_connections=10,   # Reducir conexiones para ahorrar memoria
-        pool_maxsize=10,       # Reducir pool máximo
+        pool_connections=10,  
+        pool_maxsize=10,      
         max_retries=retries
     )
     s.mount("http://", adapter)
@@ -168,7 +168,7 @@ def tls_basic(hostname):
         out["error"] = str(e)
     return out
 
-# ---- Extras plug-and-play ----
+
 def fingerprint_server(headers):
     fp = {"vendor": None, "version": None}
     server = (headers.get("Server") or "").lower()
@@ -225,29 +225,29 @@ def try_get(url, path, session, allow_404_ok=False):
 def check_exposed(url, session):
     out = {"robots_txt": None, "sitemap_xml": False, "env_exposed": False, "git_exposed": False, "wp_config_leak": False}
 
-    # robots.txt (se muestra preview igual que antes)
+
     rob = try_get(url, "/robots.txt", session)
     if rob is not None:
         out["robots_txt"] = "\n".join(rob.splitlines()[:50])
 
-    # sitemap.xml (200 basta)
+
     if try_get(url, "/sitemap.xml", session):
         out["sitemap_xml"] = True
 
-    # .env: exigir firmas típicas
+
     env_txt = try_get(url, "/.env", session)
     if env_txt:
         low = env_txt.lower()
         if ("app_key=" in low) or ("db_host=" in low) or ("db_name=" in low):
             out["env_exposed"] = True
 
-    # .git/HEAD: contenido debería comenzar con "ref: refs/heads/"
+
     git_head = try_get(url, "/.git/HEAD", session)
     if git_head:
         if git_head.strip().startswith("ref: refs/heads/"):
             out["git_exposed"] = True
 
-    # copias wp-config: exigir que el contenido parezca un wp-config real
+
     wp_copies = ["/wp-config.php~", "/wp-config.php.bak", "/wp-config.php.save", "/wp-config.old", "/wp-config.backup"]
     for p in wp_copies:
         txt = try_get(url, p, session)
@@ -994,6 +994,12 @@ def delete_report(rid):
         db.close()
 
 @app.route("/reports/<int:rid>/print", methods=["GET"])
+
+
+# Asumo que ya tienes estos importados en tu proyecto:
+# from .db import SessionLocal
+# from .models import Report, Site
+
 def print_report(rid):
     db = SessionLocal()
     try:
@@ -1011,7 +1017,7 @@ def print_report(rid):
             except Exception:
                 return ""
 
-        # Bloques comunes del JSON
+        # Bloques del JSON
         wp = rep.get("wp") or {}
         is_wp = bool(wp.get("is_wordpress") or rep.get("is_wordpress"))
         tls = rep.get("tls") or {}
@@ -1026,25 +1032,6 @@ def print_report(rid):
         privacy = rep.get("privacy") or {}
         seo = rep.get("seo") or {}
         seo_struct = rep.get("seo_structure") or {}
-        
-        # Tabla de estructura SEO
-        def row(label, value):
-            return "<tr><td>%s</td><td style='text-align:right'><b>%s</b></td></tr>" % (esc(label), esc(value))
-
-        seo_struct_rows = []
-        seo_struct_rows.append(row("H1", seo_struct.get("h1", "—")))
-        seo_struct_rows.append(row("H2", seo_struct.get("h2", "—")))
-        seo_struct_rows.append(row("H3", seo_struct.get("h3", "—")))
-        seo_struct_rows.append(row("H4", seo_struct.get("h4", "—")))
-        seo_struct_rows.append(row("Párrafos (p)", seo_struct.get("p", "—")))
-        seo_struct_rows.append(row("Listas (ul)", seo_struct.get("ul", "—")))
-        seo_struct_rows.append(row("Listas (ol)", seo_struct.get("ol", "—")))
-        seo_struct_rows.append(row("Enlaces (a)", seo_struct.get("a", "—")))
-        seo_struct_rows.append(row("Imágenes (img)", seo_struct.get("img", "—")))
-        seo_struct_table = "<table class='table'><tbody>%s</tbody></table>" % "".join(seo_struct_rows)
-
-        seo_struct_issues = seo_struct.get("issues") or []
-        seo_struct_issues_html = ("<ul class='list'>%s</ul>" % "".join("<li>%s</li>" % esc(i) for i in seo_struct_issues)) if seo_struct_issues else "<span class='ok'>✔ Sin observaciones</span>"
         exposed = rep.get("exposed") or {}
         robots_hints = rep.get("robots_sensitive_hints") or []
         staging = rep.get("staging_suspected")
@@ -1062,17 +1049,17 @@ def print_report(rid):
         wp_config_exposed = rep.get("wp_config_exposed")
         vulns = rep.get("vulns") or {}
 
-        # WP core latest / outdated
+        # WP core
         wp_version = wp.get("version") or "n/d"
         wp_latest = wp.get("latest_version") or "n/d"
         wp_outdated = wp.get("outdated_core")
 
-        # WP temas/plugins (heurística)
+        # Temas/plugins
         theme_candidates = wp.get("theme_candidates") or []
         plugins_map = wp.get("plugins") or {}
         plugins_list = list(plugins_map.keys())
 
-        # WPScan (detalles)
+        # WPScan
         core_v = vulns.get("core") or {}
         core_count = int(core_v.get("count") or 0)
         plug_v = vulns.get("plugins") or {}
@@ -1123,7 +1110,7 @@ def print_report(rid):
         def yn(val, ok="Sí", no="No", dash="—"):
             return ok if val is True else (no if val is False else dash)
 
-        # Acciones sugeridas (dinámicas)
+        # Acciones sugeridas
         acciones = []
         if headers_missing:
             acciones.append("Configurar cabeceras: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.")
@@ -1164,7 +1151,7 @@ def print_report(rid):
         if jquery_version and str(jquery_version).split(".")[0].isdigit():
             try:
                 mj = int(str(jquery_version).split(".")[0])
-                if mj < 3:  # heurística simple
+                if mj < 3:
                     acciones.append("Actualizar jQuery del tema/plantillas a rama 3.x o superior.")
             except Exception:
                 pass
@@ -1201,40 +1188,26 @@ def print_report(rid):
         if score_val > 100: score_val = 100
         grade = rep.get("grade") or "—"
         risk  = rep.get("risk_level") or "—"
-        
-                # Desglose de puntaje (score_details)
-        score_details = rep.get("score_details") or []
-        if score_details:
-            # tabla con motivo y penalización
-            rows = "".join(
-                "<tr><td>%s</td><td style='text-align:right'>%s</td></tr>" %
-                (esc(str(item.get("reason", ""))), esc(str(item.get("penalty", ""))))
-                for item in score_details
-            )
-            # suma de penalizaciones (si son numéricas)
-            total_pen = 0
-            for item in score_details:
-                try:
-                    p = item.get("penalty", 0)
-                    if isinstance(p, (int, float)):
-                        total_pen += p
-                    else:
-                        total_pen += float(p)
-                except Exception:
-                    pass
-            score_details_html = (
-                "<table class='table'>"
-                "<thead><tr><th>Motivo</th><th>Penalización</th></tr></thead>"
-                "<tbody>%s</tbody>"
-                "</table>"
-                "<div class='muted'>Penalización total aplicada: %s</div>"
-            ) % (rows, esc(total_pen))
-        else:
-            score_details_html = "<span class='ok'>✔ Sin penalizaciones registradas</span>"
 
-        
-        
-        # Render
+        # Tabla estructura SEO
+        def row(label, value):
+            return "<tr><td>%s</td><td style='text-align:right'><b>%s</b></td></tr>" % (esc(label), esc(value))
+        seo_struct_rows = []
+        seo_struct_rows.append(row("H1", seo_struct.get("h1", "—")))
+        seo_struct_rows.append(row("H2", seo_struct.get("h2", "—")))
+        seo_struct_rows.append(row("H3", seo_struct.get("h3", "—")))
+        seo_struct_rows.append(row("H4", seo_struct.get("h4", "—")))
+        seo_struct_rows.append(row("Párrafos (p)", seo_struct.get("p", "—")))
+        seo_struct_rows.append(row("Listas (ul)", seo_struct.get("ul", "—")))
+        seo_struct_rows.append(row("Listas (ol)", seo_struct.get("ol", "—")))
+        seo_struct_rows.append(row("Enlaces (a)", seo_struct.get("a", "—")))
+        seo_struct_rows.append(row("Imágenes (img)", seo_struct.get("img", "—")))
+        seo_struct_table = "<table class='table'><tbody>%s</tbody></table>" % "".join(seo_struct_rows)
+
+        seo_struct_issues = seo_struct.get("issues") or []
+        seo_struct_issues_html = ("<ul class='list'>%s</ul>" % "".join("<li>%s</li>" % esc(i) for i in seo_struct_issues)) if seo_struct_issues else "<span class='ok'>✔ Sin observaciones</span>"
+
+        # HTML
         html_out = """<!doctype html>
 <html lang="es">
 <head>
@@ -1242,36 +1215,91 @@ def print_report(rid):
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Reporte #%d · %s</title>
 <style>
-  :root {
-    --ink:#0c1222; --muted:#62708a; --line:#e7ecf4; --paper:#ffffff; --bg:#f5f7fb;
-    --brand:#243b8a; --ok:#2e7d32; --warn:#b26a00; --bad:#b00020;
-    --chip:#eef2ff;
+  :root{
+    /* Paleta clara moderna */
+    --bg1:#f7f9fc; --bg2:#ffffff;
+    --paper:rgba(255,255,255,0.86);
+    --line:#e6eaf2;
+    --ink:#0b1220; --muted:#6a768c;
+    --ok:#16a34a; --warn:#b45309; --bad:#b91c1c;
+    --brand1:#3b82f6; --brand2:#10b981;
+    --chip:#f3f6ff;
+    --shadow:0 10px 30px rgba(17,24,39,.08);
   }
   *{box-sizing:border-box}
-  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial}
-  .wrap{max-width:1100px;margin:28px auto;padding:0 18px}
-  header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
-  .brand{display:flex;align-items:center;gap:10px}
-  .brand .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#2748c7,#0bb9a9)}
-  .brand .title{font-weight:800;font-size:20px;letter-spacing:.2px}
-  .meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);margin-bottom:10px}
-  .grid{display:grid;gap:14px}
-  @media(min-width:900px){ .cols-2{grid-template-columns:1fr 1fr} .cols-3{grid-template-columns:1fr 1fr 1fr} }
-  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:16px}
-  h2.section{font-size:15px;margin:0 0 10px 0;letter-spacing:.3px}
+  html,body{margin:0;padding:0;height:100%%;color:var(--ink);
+    font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,Roboto,Arial}
+  body{
+    background:
+      radial-gradient(1100px 520px at 8%% -10%%, rgba(59,130,246,0.10), transparent 60%%),
+      radial-gradient(900px 500px at 100%% 20%%, rgba(16,185,129,0.10), transparent 60%%),
+      linear-gradient(180deg, var(--bg1), var(--bg2));
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  }
+  .wrap{max-width:1200px;margin:28px auto;padding:0 20px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{width:30px;height:30px;border-radius:10px;
+    background:linear-gradient(135deg,var(--brand1),var(--brand2)); box-shadow:0 6px 18px rgba(17,24,39,.08)}
+  .title{font-weight:800;font-size:18px;letter-spacing:.2px}
+  .meta{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);margin:6px 0 10px}
+  .grid{display:grid;gap:16px}
+  @media(min-width:980px){ .cols-2{grid-template-columns:1fr 1fr} .cols-3{grid-template-columns:1fr 1fr 1fr} }
+
+  .card{
+    position:relative;background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:16px;
+    backdrop-filter: blur(10px) saturate(120%%); -webkit-backdrop-filter: blur(10px) saturate(120%%);
+    box-shadow: var(--shadow);
+  }
+  .card::before{
+    content:""; position:absolute; inset:0; border-radius:16px; padding:1px; pointer-events:none;
+    background:linear-gradient(135deg, rgba(59,130,246,0.35), rgba(16,185,129,0.30));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+  }
+
+  h2.section{font-size:15px;margin:0 0 10px;letter-spacing:.3px}
+  .kv{display:inline-flex;align-items:center;gap:6px; padding:6px 10px; margin:4px 6px 0 0;
+      border:1px solid var(--line); border-radius:999px; background:#f9fbff}
+  .pill{display:inline-flex;align-items:center;gap:6px; padding:4px 10px; border-radius:999px;
+        font-size:12px; border:1px solid var(--line); background:var(--chip)}
+  .pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+  .muted{color:var(--muted)}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+
+  /* Hero + Puntaje */
+  .hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+  .score-donut{
+    --p:%d; /* porcentaje (0-100) */
+    width:96px;height:96px;border-radius:50%%; position:relative;
+    background:conic-gradient(var(--brand1) calc(var(--p)*1%%), rgba(0,0,0,0.07) 0);
+    box-shadow: inset 0 0 0 1px var(--line), 0 8px 24px rgba(17,24,39,.06);
+    display:grid; place-items:center;
+  }
+  .score-donut::before{
+    content:""; position:absolute; inset:6px; border-radius:50%%; background:#ffffff;
+  }
+  .score-donut span{position:relative; font-weight:800; font-size:20px; color:var(--ink)}
+
+  .scorebar{height:10px;background:#eef2f9;border-radius:999px;overflow:hidden}
+  .scorefill{height:100%%;width:%d%%%%;background:linear-gradient(90deg,var(--brand1),var(--brand2))}
+
   .list{padding-left:18px;margin:6px 0}
   .list li{margin:4px 0}
-  .kv{border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:#fafcff;display:inline-block;margin:4px 6px 0 0}
-  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:var(--chip);margin-left:6px}
-  .pill-warn{background:#fff7e6;border-color:#ffd699}
-  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
-  .scorebox{display:flex;align-items:center;gap:12px;margin:12px 0 4px}
-  .scorebar{flex:1;height:10px;background:#edf1f7;border-radius:999px;overflow:hidden}
-  .scorefill{height:100%%;width:%d%%;background:linear-gradient(90deg,#7c9aff,#29d3a3)}
-  .table{width:100%%;border-collapse:collapse}
-  .table td{border-top:1px solid var(--line);padding:6px 0;word-break:break-all}
-  footer.note{margin:20px 0 8px;color:var(--muted);font-size:12px;text-align:center}
-  @media print { body{background:#fff} .card{break-inside:avoid} .wrap{margin:0 auto} header{margin-bottom:8px} }
+  .table{width:100%%;border-collapse:collapse; font-size:13px}
+  .table td,.table th{border-top:1px solid var(--line);padding:8px 0;word-break:break-word}
+  pre{white-space:pre-wrap; word-wrap:break-word; background:#fafcff; padding:12px; border-radius:12px; border:1px solid var(--line)}
+
+  footer.note{margin:24px 0 10px;color:var(--muted);font-size:12px;text-align:center}
+
+  /* Impresión */
+  @media print{
+    body{background:#fff}
+    .card{break-inside:avoid; box-shadow:none; border-color:#e5e7eb}
+    .logo{box-shadow:none}
+    .score-donut{box-shadow:none}
+  }
 </style>
 </head>
 <body>
@@ -1281,6 +1309,7 @@ def print_report(rid):
         <div class="logo"></div>
         <div class="title">IDEI Auditor · Reporte de Seguridad WordPress</div>
       </div>
+      <div class="pill" title="Riesgo">%s · <b>%s</b></div>
     </header>
 
     <div class="meta">
@@ -1290,24 +1319,24 @@ def print_report(rid):
     </div>
 
     <div class="card">
-      <h2 class="section">Resumen</h2>
-      <div>
-        <span class="kv"><b>WordPress:</b> %s</span>
-        <span class="kv"><b>Versión:</b> %s</span>
-        <span class="kv"><b>Última:</b> %s</span>
-        <span class="kv"><b>Core desactualizado:</b> %s</span>
-        <span class="kv"><b>Servidor:</b> %s</span>
-        <span class="kv"><b>Powered-By:</b> %s</span>
-        <span class="kv"><b>Puntaje:</b> %d</span>
-        <span class="kv"><b>Grade:</b> %s</span>
-        <span class="kv"><b>Riesgo:</b> %s</span>
-      </div>
-      <div class="scorebox">
-        <div class="scorebar"><div class="scorefill"></div></div>
+      <div class="hero">
+        <div class="score-donut"><span>%d</span></div>
+        <div style="flex:1;min-width:220px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <span class="pill"><b>WordPress:</b> %s</span>
+            <span class="pill"><b>Versión:</b> %s</span>
+            <span class="pill"><b>Última:</b> %s</span>
+            <span class="pill %s"><b>Core desactualizado:</b> %s</span>
+            <span class="pill"><b>Servidor:</b> %s</span>
+            <span class="pill"><b>Powered-By:</b> %s</span>
+            <span class="pill"><b>Grade:</b> %s</span>
+          </div>
+          <div class="scorebar"><div class="scorefill"></div></div>
+        </div>
       </div>
     </div>
 
-    <div class="grid cols-3" style="margin-top:14px">
+    <div class="grid cols-3" style="margin-top:16px">
       <div class="card">
         <h2 class="section">Servidor / CDN / WAF</h2>
         <div class="kv"><b>Vendor:</b> %s</div>
@@ -1334,7 +1363,7 @@ def print_report(rid):
       </div>
     </div>
 
-    <div class="grid cols-2" style="margin-top:14px">
+    <div class="grid cols-2" style="margin-top:16px">
       <div class="card">
         <h2 class="section">Cabeceras de seguridad</h2>
         %s
@@ -1396,14 +1425,15 @@ def print_report(rid):
         <div class="kv"><b>robots.txt (pistas sensibles):</b></div>
         %s
       </div>
-    <div class="card">
-  <h2 class="section">Estructura SEO de la Página</h2>
-  %s
-  <div style="margin-top:8px">
-    <div class="kv"><b>Observaciones:</b></div>
-    %s
-  </div>
-</div>
+
+      <div class="card">
+        <h2 class="section">Estructura SEO de la Página</h2>
+        %s
+        <div style="margin-top:8px">
+          <div class="kv"><b>Observaciones:</b></div>
+          %s
+        </div>
+      </div>
 
       <div class="card">
         <h2 class="section">APIs/Integraciones</h2>
@@ -1417,30 +1447,29 @@ def print_report(rid):
         <div class="kv"><b>jQuery:</b> %s</div>
       </div>
 
-      <div class="card" style="grid-column: 1/-1">
+      <div class="card" style="grid-column:1/-1">
         <h2 class="section">Vulnerabilidades (WPScan)</h2>
         <div class="kv"><b>Núcleo:</b> %s vulnerabilidades</div>
         <div style="margin-top:8px">
-          <h3 style="font-size:13px;margin:10px 0 6px 0">Plugins</h3>
+          <h3 style="font-size:13px;margin:10px 0 6px">Plugins</h3>
           %s
-          <h3 style="font-size:13px;margin:14px 0 6px 0">Temas</h3>
+          <h3 style="font-size:13px;margin:14px 0 6px">Temas</h3>
           %s
         </div>
       </div>
 
-      <div class="card" style="grid-column: 1/-1">
+      <div class="card" style="grid-column:1/-1">
         <h2 class="section">Desglose de Puntaje</h2>
         %s
       </div>
 
-
-      <div class="card" style="grid-column: 1/-1">
+      <div class="card" style="grid-column:1/-1">
         <h2 class="section">Acciones sugeridas</h2>
         %s
       </div>
     </div>
 
-    <div class="card" style="margin-top:14px">
+    <div class="card" style="margin-top:16px">
       <h2 class="section">Anexo · JSON completo</h2>
       <pre>%s</pre>
     </div>
@@ -1453,55 +1482,90 @@ def print_report(rid):
 </html>
 """ % (
             rep_obj.id, esc(url),
-            score_val,
+
+            # Donut y barra: usan score_val
+            score_val, score_val,
+
+            # Header riesgo pill
+            grade, risk,
+
+            # Meta
             esc(url), rep_obj.id, rep_obj.created_at.isoformat(),
+
+            # Donut número
+            score_val,
+
+            # Chips resumen
             ("Sí" if is_wp else "No"),
             esc(wp_version),
             esc(wp_latest),
+            ("bad" if wp_outdated else "ok") if isinstance(wp_outdated, bool) else "",
             ("Sí" if wp_outdated else ("No" if wp_outdated is False else "—")),
             esc(rep.get("server","—")),
             esc(rep.get("x_powered_by","—")),
-            score_val,
             grade,
-            risk,
+
+            # Servidor/CDN/WAF
             esc(server_fp.get("vendor") or "—"),
             esc(server_fp.get("version") or "—"),
             esc(waf_cdn.get("cdn") or "—"),
             esc(waf_cdn.get("waf") or "—"),
             esc(tls.get("protocol") or "—"),
             esc(str(tls.get("days_to_expiry")) if tls.get("days_to_expiry") is not None else "—"),
+
+            # Host
             esc(host.get("ip") or "—"),
             esc(host.get("rdns") or "—"),
             ("Sí" if staging else "No"),
+
+            # REST
             esc(rest.get("routes_count") or "—"),
             ("Abierto" if rest.get("users_endpoint_open") is True else ("Restringido" if rest.get("users_endpoint_open") is False else "—")),
             ("Inseguro (*)" if rest.get("cors_unsafe") is True else ("OK" if rest.get("cors_unsafe") is False else "—")),
+
+            # Cabeceras / Cookies
             headers_html,
             cookies_html,
+
+            # WordPress detalles
             ("<li>/readme.html expuesto</li>" if wp.get("readme_exposed") else ""),
             ("<li>/xmlrpc.php accesible</li>" if wp.get("xmlrpc_accessible") else ""),
             ("<li>/wp-login.php expuesto</li>" if wp.get("wp_login_exposed") else ""),
             ("<li>/wp-json/ disponible</li>" if wp.get("rest_api") else ""),
             esc(themes_str),
             esc(plugins_str),
+
+            # Mixed
             mixed_html,
+
+            # Archivos/dirs
             open_dirs_html,
             backups_html,
             ("Sí" if license_exposed else "No"),
             ("Sí" if wp_config_exposed else "No"),
+
+            # Performance
             esc(str(perf.get("ttfb_ms") or "—")),
             esc(str(perf.get("gzip_br") or "—")),
             esc(str(perf.get("html_size_kb") or "—")),
             esc(str(perf.get("cache_control") or "—")),
+
+            # Privacidad
             ("Sí" if ((privacy.get("tracking") or {}).get("ga")) else "No"),
             ("Sí" if ((privacy.get("tracking") or {}).get("gtm")) else "No"),
             ("Sí" if ((privacy.get("tracking") or {}).get("fbp")) else "No"),
             ("Sí" if privacy.get("mailto_found") else "No"),
+
+            # SEO básico
             esc(seo.get("title") or "—"),
             esc(seo.get("meta_description") or "—"),
             esc(seo.get("robots_meta") or "—"),
             robots_html,
+
+            # Estructura SEO
             seo_struct_table, seo_struct_issues_html,
+
+            # APIs/Integraciones
             yn(admin_ajax_open),
             yn(wp_cron_accessible),
             yn(oembed_enabled),
@@ -1510,11 +1574,17 @@ def print_report(rid):
             ("Expuesto" if wc_rest_exposed is True else ("OK" if wc_rest_exposed is False else "—")),
             yn(acf_rest in (True, 200, 401, 403)),
             esc(jquery_version or "—"),
+
+            # Vulns
             str(core_count),
             plugins_block,
             themes_block,
-            score_details_html,
+
+            # Score details + Acciones
+            esc(score_val),  # ya incluido visualmente; si quieres puedes añadir más contexto
             acciones_html,
+
+            # Anexo + footer
             html.escape(json.dumps(rep, ensure_ascii=False, indent=2)),
             esc(url)
         )
