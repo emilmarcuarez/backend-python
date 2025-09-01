@@ -1,0 +1,28 @@
+name: wordpress-security-scanner
+service:
+  type: web
+  ports:
+    - port: 8000
+      protocol: http
+  env:
+    - name: PORT
+      value: "8000"
+    - name: PYTHONUNBUFFERED
+      value: "1"
+    - name: GUNICORN_CMD_ARGS
+      value: "--timeout=120 --keep-alive=5 --max-requests=1000 --max-requests-jitter=100"
+  resources:
+    cpu: 0.5
+    memory: 1Gi
+  scaling:
+    min: 1
+    max: 2
+  healthcheck:
+    http:
+      path: /reports
+      port: 8000
+    initial_delay_seconds: 30
+    period_seconds: 10
+    timeout_seconds: 5
+    success_threshold: 1
+    failure_threshold: 3

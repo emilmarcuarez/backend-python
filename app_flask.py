@@ -18,6 +18,7 @@ from flask_cors import CORS, cross_origin
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
+from requests.adapters import HTTPAdapter, Retry
 load_dotenv()
 
 
@@ -30,7 +31,13 @@ if db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 
-engine = create_engine(db_url, pool_pre_ping=True)
+engine = create_engine(
+    db_url, 
+    pool_pre_ping=True,
+    pool_size=5,           # Reducir tamaño del pool
+    max_overflow=10,       # Reducir overflow máximo
+    pool_recycle=3600      # Reciclar conexiones cada hora
+)
 
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -80,6 +87,31 @@ SECURITY_HEADERS = [
     "Content-Security-Policy", "Strict-Transport-Security", "X-Frame-Options",
     "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy"
 ]
+
+# timeouts "conservadores" (connect, read)
+CONNECT_TIMEOUT = 3
+READ_TIMEOUT = 6
+REQ_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
+
+def make_session():
+    s = requests.Session()
+    retries = Retry(
+        total=2,               # 2 reintentos como máximo
+        connect=1,
+        read=1,
+        backoff_factor=0.5,    # backoff más agresivo
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["GET", "POST"])
+    )
+    adapter = HTTPAdapter(
+        pool_connections=10,   # Reducir conexiones para ahorrar memoria
+        pool_maxsize=10,       # Reducir pool máximo
+        max_retries=retries
+    )
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
+    s.headers.update(UA)
+    return s
 
 def get_db():
     db = SessionLocal()
@@ -266,8 +298,10 @@ def performance_check(url, session):
         out["cache_control"] = r.headers.get("Cache-Control")
         content = r.content[:300000]
         out["html_size_kb"] = round(len(content)/1024.0, 1)
-    except Exception:
-        pass
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout):
+        out["error"] = "Timeout o error de conexión"
+    except Exception as e:
+        out["error"] = str(e)
     return out
 
 def privacy_scan(html_text):
@@ -438,6 +472,8 @@ def check_oembed(url, session):
     try:
         r = session.get(urljoin(url, "/oembed/1.0/embed"), params={"url": url}, headers=UA, timeout=8)
         return r.status_code == 200
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout):
+        return None
     except Exception:
         return None
 
@@ -720,8 +756,23 @@ def seo_structure_from_html(html_text: str) -> dict:
 
 def analyze(url):
     url = norm_url(url.strip())
-    session = requests.Session()
-    session.headers.update(UA)
+    session = make_session()  # Usar la sesión configurada con retries
+    
+    try:
+        r = session.get(url, timeout=REQ_TIMEOUT, allow_redirects=True)
+        session.headers.update(UA)
+    except Exception as e:
+        # Si falla la conexión inicial, devolver un reporte básico
+        return {
+            "url": url,
+            "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "error": f"Error de conexión: {str(e)}",
+            "wp": {"is_wordpress": False},
+            "is_wordpress": False,
+            "score": 0,
+            "grade": "F",
+            "risk_level": "Critical"
+        }
 
     report = {
         "url": url,
@@ -846,6 +897,11 @@ def analyze(url):
 
 
 # ------------------ ENDPOINTS ------------------
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Endpoint simple para health checks de Koyeb"""
+    return jsonify({"status": "healthy", "timestamp": datetime.utcnow().isoformat()})
+
 @app.route("/scan", methods=["POST"])
 def scan():
     data = request.get_json(force=True, silent=True) or {}
@@ -871,9 +927,13 @@ def scan_save():
     url = data.get("url") or ""
     if not url:
         return jsonify({"detail":"Falta 'url'"}), 400
-    rep = analyze(url)
-    if not rep.get("wp",{}).get("is_wordpress"):
-        return jsonify({"detail": "El sitio no parece ser WordPress (heurística)."}), 400
+    
+    try:
+        rep = analyze(url)
+        if not rep.get("wp",{}).get("is_wordpress"):
+            return jsonify({"detail": "El sitio no parece ser WordPress (heurística)."}), 400
+    except Exception as e:
+        return jsonify({"detail": f"Error durante el análisis: {str(e)}"}), 500
 
     db = SessionLocal()
     try:
