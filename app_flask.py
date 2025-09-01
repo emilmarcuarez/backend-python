@@ -20,24 +20,19 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
 load_dotenv()
 
-# ==================== BASE DE DATOS (Postgres en Neon) ====================
 
-# Lee la URL completa desde env (p.ej. en Koyeb)
-# Ejemplo para Koyeb:
-# DATABASE_URL=postgresql+psycopg://USER:PASS@HOST/DB?sslmode=require
 db_url = os.environ.get("DATABASE_URL", "").strip()
 if not db_url:
-    # Fallback solo para pruebas locales: SQLite en archivo
+
     db_url = "sqlite:///app.db"
 
-# Si viene como "postgresql://", cámbialo a "postgresql+psycopg://"
 if db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
-# Crea el engine (pool_pre_ping reconecta si se corta)
+
 engine = create_engine(db_url, pool_pre_ping=True)
 
-# Sesiones y Base declarativa
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -58,16 +53,19 @@ class Report(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-# Crea tablas si no usas migraciones (seguro para el primer despliegue)
 Base.metadata.create_all(bind=engine)
 
-# ==================== Flask ====================
+
 app = Flask(__name__)
 
-# Permite solo tu frontend de Plesk
-CORS(app, resources={r"/api/*": {"origins": "https://analisis.ideidev.com"}})
-# (Opcional para dev local)
-# CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5173", "https://analisis.ideidev.com"]}})
+CORS(
+    app,
+    resources={r"/*": {"origins": "https://analisis.ideidev.com"}},
+    supports_credentials=False,  # pon True solo si usas cookies/autenticación de navegador
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+    expose_headers=["Content-Disposition"],
+)
 
 UA = {"User-Agent": "IDEI-Auditor/1.0 (+contacto@idei.example)"}
 SECURITY_HEADERS = [
@@ -75,18 +73,12 @@ SECURITY_HEADERS = [
     "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy"
 ]
 
-# Utilidad para obtener/cerrar sesión por petición si la usas en tus rutas:
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-
-# ...tus rutas aquí...
-# @app.get("/api/hello")
-# def hello():
-#     return {"ok": True}
 
 
 def norm_url(u):
