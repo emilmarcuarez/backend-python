@@ -1223,8 +1223,10 @@ def print_report(rid):
     background:var(--brand); color:#fff; font-weight:800; letter-spacing:.02em;
     padding:6mm 8mm; font-size:16px; display:flex; align-items:center; justify-content:space-between
   }
-  .section .body{ padding:6mm 8mm }
-
+  .section .body{ padding:6mm 8mm max-with: 100% !important;}
+    .list li {
+        max-width: 100% !important;
+    }
   .grid{ display:grid; gap:5mm }
   .cols-2{ grid-template-columns:1fr 1fr }
   .cols-3{ grid-template-columns:repeat(3, 1fr) }
