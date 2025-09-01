@@ -1,6 +1,3 @@
-
-
-
 from __future__ import print_function
 
 import os
@@ -17,32 +14,40 @@ import requests
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 
+# SQLAlchemy (modo síncrono)
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
-load_dotenv() 
+load_dotenv()
 
-# base de datos
-DB_HOST = os.environ.get("DB_HOST")
-DB_PORT = os.environ.get("DB_PORT")
-DB_USER = os.environ.get("DB_USER")
-DB_PASS = os.environ.get("DB_PASS")
-DB_NAME = os.environ.get("DB_NAME")
+# ==================== BASE DE DATOS (Postgres en Neon) ====================
 
-DATABASE_URL = "mysql+pymysql://{user}:{pw}@{host}:{port}/{db}?charset=utf8mb4".format(
-    user=DB_USER, pw=DB_PASS, host=DB_HOST, port=DB_PORT, db=DB_NAME
-)
+# Lee la URL completa desde env (p.ej. en Koyeb)
+# Ejemplo para Koyeb:
+# DATABASE_URL=postgresql+psycopg://USER:PASS@HOST/DB?sslmode=require
+db_url = os.environ.get("DATABASE_URL", "").strip()
+if not db_url:
+    # Fallback solo para pruebas locales: SQLite en archivo
+    db_url = "sqlite:///app.db"
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+# Si viene como "postgresql://", cámbialo a "postgresql+psycopg://"
+if db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+# Crea el engine (pool_pre_ping reconecta si se corta)
+engine = create_engine(db_url, pool_pre_ping=True)
+
+# Sesiones y Base declarativa
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
+
 
 class Site(Base):
     __tablename__ = "sites"
     id = Column(Integer, primary_key=True, autoincrement=True)
     url = Column(String(512), unique=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
 class Report(Base):
     __tablename__ = "reports"
@@ -52,18 +57,37 @@ class Report(Base):
     report_json = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-Base.metadata.create_all(engine)
 
-# ------------------ Flask ------------------
-  #  app = Flask(__name__)
-   # CORS(app)
+# Crea tablas si no usas migraciones (seguro para el primer despliegue)
+Base.metadata.create_all(bind=engine)
+
+# ==================== Flask ====================
 app = Flask(__name__)
+
+# Permite solo tu frontend de Plesk
 CORS(app, resources={r"/api/*": {"origins": "https://analisis.ideidev.com"}})
+# (Opcional para dev local)
+# CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5173", "https://analisis.ideidev.com"]}})
+
 UA = {"User-Agent": "IDEI-Auditor/1.0 (+contacto@idei.example)"}
 SECURITY_HEADERS = [
-    "Content-Security-Policy","Strict-Transport-Security","X-Frame-Options",
-    "X-Content-Type-Options","Referrer-Policy","Permissions-Policy"
+    "Content-Security-Policy", "Strict-Transport-Security", "X-Frame-Options",
+    "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy"
 ]
+
+# Utilidad para obtener/cerrar sesión por petición si la usas en tus rutas:
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# ...tus rutas aquí...
+# @app.get("/api/hello")
+# def hello():
+#     return {"ok": True}
+
 
 def norm_url(u):
     return u if u.startswith("http") else "https://" + u
