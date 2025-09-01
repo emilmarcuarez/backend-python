@@ -12,7 +12,7 @@ from urllib.parse import urlparse, urljoin
 
 import requests
 from flask import Flask, request, jsonify, Response
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 
 # SQLAlchemy (modo síncrono)
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
@@ -58,13 +58,21 @@ Base.metadata.create_all(bind=engine)
 
 app = Flask(__name__)
 
+# Define allowed origins for CORS
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://analisis.ideidev.com"
+]
+
 CORS(
     app,
-    resources={r"/*": {"origins": "https://analisis.ideidev.com"}},
-    supports_credentials=False,  # pon True solo si usas cookies/autenticación de navegador
+    resources={r"/*": {"origins": ALLOWED_ORIGINS}},
+    supports_credentials=False,  # True solo si usas cookies/sesiones de navegador
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
     expose_headers=["Content-Disposition"],
+    max_age=86400,   # cachea el preflight
 )
 
 UA = {"User-Agent": "IDEI-Auditor/1.0 (+contacto@idei.example)"}
@@ -852,8 +860,14 @@ def scan():
     return jsonify(rep)
 
 @app.route("/scan-save", methods=["POST"])
+@cross_origin(
+  origins=["https://analisis.ideidev.com"],
+  methods=["POST", "OPTIONS"],
+  allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+  max_age=86400,
+)
 def scan_save():
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(silent=True) or {}
     url = data.get("url") or ""
     if not url:
         return jsonify({"detail":"Falta 'url'"}), 400
