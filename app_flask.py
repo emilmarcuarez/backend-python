@@ -3138,7 +3138,7 @@ alert_html,
             robots_html,
 
             # Estructura SEO
-            seo_struct_table, (("<span class='ok'>✔ Sin observaciones</span>") if not seo_struct_issues else ("<ul class='list'>%s</ul>" % "".join("<li>%s</li>" % esc(i) for i in seo_struct_issues))),
+            seo_struct_table, seo_struct_issues_html,
 
             # WordPress
             wp_version,
