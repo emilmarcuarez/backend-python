@@ -1488,7 +1488,7 @@ def print_report(rid):
         heur_list_html = "<ul class='list'>" + "".join(f"<li>{esc(i)}</li>" for i in (heu.get('issues') or [])) + "</ul>"
         recs_html = "<ol class='list'>" + "".join(f"<li>{esc(i)}</li>" for i in recs) + "</ol>"
 
-        # ===== Malware: variables para impresión =====
+       # ===== Malware: variables para impresión =====
         mal = rep.get("malware_scan") or {}
         infected_label = "Sí" if mal.get("infected") else ("No" if mal.get("infected") is False else "—")
 
@@ -1496,16 +1496,38 @@ def print_report(rid):
         urls_html = "<ul class='list'>" + "".join(f"<li>{esc(u)}</li>" for u in sus_urls[:20]) + \
                     ("<li>…</li>" if len(sus_urls) > 20 else "") + "</ul>"
 
-        
         snips = []
         for e in (mal.get("urls") or [])[:10]:
             if e.get("snippets"):
                 for s in e["snippets"][:2]:
-
                     snips.append(f"<div><b>{esc(e.get('url',''))}</b><pre>{esc(s[:1200])}</pre></div>")
         evid_html = "".join(snips) or "<span class='ok'>✔ Sin evidencias capturadas</span>"
 
-   
+        # ===== Alerta crítica (roja) cuando hay infección o reputación mala =====
+        sec_rep = rep.get("security_reputation") or {}
+        _gsb_unsafe = ((sec_rep.get("gsb") or {}).get("unsafe") is True)
+        _vt_mal = sec_rep.get("virustotal", {}).get("malicious")
+        try:
+            _vt_mal = int(_vt_mal) if _vt_mal is not None else 0
+        except Exception:
+            _vt_mal = 0
+
+        sev = (mal or {}).get("severity")
+        _mal_infected = (mal or {}).get("infected") is True
+
+        is_critical = _mal_infected or _gsb_unsafe or (_vt_mal >= 1) or (sev in ("high", "critical"))
+        if is_critical:
+            alert_html = (
+                "<div class='alert-bad no-break'>"
+                "<div class='alert-title'>ALERTA CRÍTICA · Posible infección activa</div>"
+                "<div>Se detectaron indicadores de malware/SEO spam o reputación negativa. "
+                "Prioriza limpieza del sitio, revoca accesos, actualiza núcleo/temas/plugins y endurece WAF.</div>"
+                "</div>"
+            )
+        else:
+            alert_html = ""
+
+
         html_out = """<!doctype html>
 <html lang="es">
 <head>
@@ -1604,6 +1626,18 @@ def print_report(rid):
   /* Footer con numeración */
   .footer{ text-align:center; color:var(--muted); font-size:12px; margin:6mm 0 10mm }
   .pnum:after{ counter-increment: page; content: counter(page) }
+  
+  .alert-bad{
+  background: linear-gradient(90deg, #fee2e2, #fecaca);
+  border: 1px solid #fecaca;
+  color: #7f1d1d;
+  padding: 10px 14px;
+  border-radius: 12px;
+  margin: 8mm 0;
+  font-weight: 700;
+    }
+    .alert-title{ font-size: 15px; margin-bottom: 2mm }
+
 </style>
 </head>
 <body>
@@ -1673,6 +1707,18 @@ def print_report(rid):
         </div>
       </div>
     </div>
+
+    <div class="section no-break">
+    <div class="title" style="%s">Detección de Malware (crawling + DOM)</div>
+    <div class="body">
+        <div class="kv"><b>Infección detectada:</b> %s</div>
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">URLs sospechosas</h3>
+        %s
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Evidencias (snippets)</h3>
+        %s
+    </div>
+    </div>
+
 
     <!-- BLOQUES TECNICOS -->
     <div class="grid cols-3">
