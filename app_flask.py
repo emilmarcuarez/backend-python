@@ -1046,7 +1046,7 @@ def analyze(url):
     # ===== Malware crawling + DOM render (opcional) =====
     if enable_mal and (time.perf_counter() - overall_start) < (overall_budget - 12):
         try:
-            mal = scan_site_malware(r.url, max_pages=80, per_url_budget=0.6)
+            mal = scan_site_malware(r.url, max_pages=50, per_url_budget=0.6)
         except Exception as _e:
             mal = {"infected": None, "urls": [], "summary": {}, "error": str(_e)}
         report["malware_scan"] = mal
