@@ -1261,7 +1261,7 @@ def delete_report(rid):
     try:
         r = db.query(Report).get(rid)
         if not r:
-            return jsonify({"detail":"Reporte no encontrado"}), 404
+            return jsonify({"detail":"Reporte no encontradop"}), 404
         db.delete(r)
         db.commit()
         return Response(status=204)
