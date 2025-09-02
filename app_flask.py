@@ -3166,7 +3166,7 @@ alert_html,
 
 
             # contenido mixto
-            mixed_html,
+         mixed_html,
 
             # archivos/dirs
             open_dirs_html,
@@ -3235,6 +3235,7 @@ alert_html,
 
             # Análisis de Contenido
             risk_html,
+            mixed_html,
             casino_html,
             spam_html,
             malicious_html,
