@@ -631,7 +631,7 @@ def phishtank_check(url):
                     "total_entries": len(phish_data),
                     "api_status": r.status_code
                 }
-        except Exception:
+    except Exception:
             pass
         
         return {
@@ -1139,7 +1139,7 @@ def wp_heuristics(html_text):
         for m in re.finditer(pattern, html_text, re.I):
             name = m.group(1).strip()
             if name and name not in data["theme_candidates"] and len(name) > 2:
-                data["theme_candidates"].append(name)
+            data["theme_candidates"].append(name)
     
     # Detectar plugins - múltiples patrones
     plugin_patterns = [
@@ -1154,7 +1154,7 @@ def wp_heuristics(html_text):
         for m in re.finditer(pattern, html_text, re.I):
             slug = m.group(1).strip()
             if slug and slug not in data["plugins"] and len(slug) > 2:
-                data["plugins"][slug] = []
+            data["plugins"][slug] = []
     return data
 
 def wp_probes(base_url, session):
@@ -2864,7 +2864,7 @@ def print_report(rid):
         </div>
       </div>
 
-    </div>
+      </div>
 
       <div class="section">
         <div class="title">Contenido mixto</div>
@@ -2948,7 +2948,7 @@ def print_report(rid):
 
       <div class="subsection">
         <div class="subsection-title">Análisis de Contenido Sospechoso</div>
-        <div class="body">
+      <div class="body">
           <div class="kv"><b>Nivel de Riesgo:</b> %s</div>
           
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎰 Contenido de Casino/Juegos</h3>
@@ -2984,14 +2984,14 @@ def print_report(rid):
       
       <div class="subsection">
         <div class="subsection-title">Core Web Vitals (PageSpeed)</div>
-        <div class="body">
-          <div class="kv"><b>LCP:</b> %s ms</div>
-          <div class="kv"><b>CLS:</b> %s</div>
-          <div class="kv"><b>INP:</b> %s ms</div>
-          <div class="kv"><b>Score (mobile):</b> %s</div>
-          <div class="kv"><b>Score (desktop):</b> %s</div>
-        </div>
+      <div class="body">
+        <div class="kv"><b>LCP:</b> %s ms</div>
+        <div class="kv"><b>CLS:</b> %s</div>
+        <div class="kv"><b>INP:</b> %s ms</div>
+        <div class="kv"><b>Score (mobile):</b> %s</div>
+        <div class="kv"><b>Score (desktop):</b> %s</div>
       </div>
+    </div>
 
       <div class="subsection">
         <div class="subsection-title">Análisis de UX/UI Detallado</div>
@@ -3024,17 +3024,17 @@ def print_report(rid):
 
       <div class="subsection">
         <div class="subsection-title">UX/UI y Accesibilidad</div>
-        <div class="body">
-          <div class="kv"><b>Violaciones WCAG (axe):</b> %s</div>
-          <div class="kv"><b>CrUX p75 LCP:</b> %s ms</div>
-          <div class="kv"><b>CrUX p75 INP:</b> %s ms</div>
-          <div class="kv"><b>CrUX p75 CLS:</b> %s</div>
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">Heurísticas UX detectadas</h3>
-          %s
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">Recomendaciones</h3>
-          %s
-        </div>
+      <div class="body">
+        <div class="kv"><b>Violaciones WCAG (axe):</b> %s</div>
+        <div class="kv"><b>CrUX p75 LCP:</b> %s ms</div>
+        <div class="kv"><b>CrUX p75 INP:</b> %s ms</div>
+        <div class="kv"><b>CrUX p75 CLS:</b> %s</div>
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Heurísticas UX detectadas</h3>
+        %s
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Recomendaciones</h3>
+        %s
       </div>
+    </div>
 
       <div class="subsection">
         <div class="subsection-title">Meta Tags y Schema</div>
@@ -3055,14 +3055,14 @@ def print_report(rid):
       
       <div class="subsection">
         <div class="subsection-title">Detección de Malware (crawling + DOM)</div>
-        <div class="body">
-          <div class="kv"><b>Infección detectada:</b> %s</div>
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">URLs sospechosas</h3>
-          %s
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">Evidencias (snippets)</h3>
-          %s
-        </div>
-      </div>
+  <div class="body">
+    <div class="kv"><b>Infección detectada:</b> %s</div>
+    <h3 style="margin:6mm 0 2mm 0;font-size:14px">URLs sospechosas</h3>
+    %s
+    <h3 style="margin:6mm 0 2mm 0;font-size:14px">Evidencias (snippets)</h3>
+    %s
+  </div>
+</div>
 
       <div class="subsection">
         <div class="subsection-title">APIs de Seguridad</div>
