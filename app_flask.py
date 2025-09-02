@@ -888,7 +888,12 @@ def seo_structure_from_html(html_text: str) -> dict:
 
 def analyze(url):
     overall_start = time.perf_counter()
-    overall_budget = float(os.getenv("ANALYZE_BUDGET_SECONDS", "45"))  # Presupuesto total (s)
+    # Presupuesto total por defecto más bajo para evitar 524 del proxy
+    overall_budget = float(os.getenv("ANALYZE_BUDGET_SECONDS", "30"))
+    # Flags para habilitar checks pesados opcionalmente
+    enable_psi = os.getenv("ENABLE_PSI", "0") == "1"
+    enable_ux  = os.getenv("ENABLE_UX", "0") == "1"
+    enable_mal = os.getenv("ENABLE_MALWARE_SCAN", "0") == "1"
     url = norm_url(url.strip())
     session = make_session()
     
@@ -1021,13 +1026,13 @@ def analyze(url):
 
     report["performance"] = performance_check(r.url, session)
     
-    # PageSpeed (core web vitals)
-    if (time.perf_counter() - overall_start) < (overall_budget - 15):
+    # PageSpeed (core web vitals) opcional
+    if enable_psi and (time.perf_counter() - overall_start) < (overall_budget - 15):
         _psi_m = pagespeed_fetch(r.url, "mobile")
         _psi_d = pagespeed_fetch(r.url, "desktop")
         report["pagespeed"] = {"mobile": _psi_m, "desktop": _psi_d}
     else:
-        report["pagespeed"] = {"mobile": {"error": "budget"}, "desktop": {"error": "budget"}}
+        report["pagespeed"] = {"mobile": {"error": "disabled"}, "desktop": {"error": "disabled"}}
 
     # mete C WV resumidas en performance para que tu UI/impresión lo tenga fácil
     psi_all = report.get("pagespeed") or {}
@@ -1039,43 +1044,41 @@ def analyze(url):
     report["performance"]["psi_score_mobile"] = pm.get("perf_score")
     report["performance"]["psi_score_desktop"] = pd.get("perf_score")
 
-    # ===== Malware crawling + DOM render (antes de privacy/seo y antes del score) =====
-    try:
-        # Crawling de hasta 60 páginas internas (prioriza keywords sospechosas)
-        mal = scan_site_malware(r.url, max_pages=60, per_url_budget=0.2)
-    except Exception as _e:
-        mal = {"infected": None, "urls": [], "summary": {}, "error": str(_e)}
-
-    report["malware_scan"] = mal
-
-    # Si hay URLs sospechosas, revalida con GSB (por lote) para marcar matches oficiales
-    sus = (mal.get("summary") or {}).get("suspected_urls") or []
-    sus = [u for u in sus if u != r.url][:10]  # limita a 10 por cuota
-
-    if sus and os.getenv("GSB_API_KEY"):
-        body = {
-            "client": {"clientId": "idei-auditor", "clientVersion": "1.0"},
-            "threatInfo": {
-                "threatTypes": ["MALWARE","SOCIAL_ENGINEERING","UNWANTED_SOFTWARE","POTENTIALLY_HARMFUL_APPLICATION"],
-                "platformTypes": ["ANY_PLATFORM"],
-                "threatEntryTypes": ["URL"],
-                "threatEntries": [{"url": u} for u in sus],
-            },
-        }
+    # ===== Malware crawling + DOM render (opcional) =====
+    if enable_mal and (time.perf_counter() - overall_start) < (overall_budget - 12):
         try:
-            multi = requests.post(
-                f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={os.getenv('GSB_API_KEY','')}",
-                json=body, headers=UA, timeout=REQ_TIMEOUT
-            )
-            report.setdefault("security_reputation", {})["gsb_suspects"] = multi.json() if multi.ok else {}
+            mal = scan_site_malware(r.url, max_pages=40, per_url_budget=0.15)
         except Exception as _e:
-            report.setdefault("security_reputation", {})["gsb_suspects_error"] = str(_e)
+            mal = {"infected": None, "urls": [], "summary": {}, "error": str(_e)}
+        report["malware_scan"] = mal
+        sus = (mal.get("summary") or {}).get("suspected_urls") or []
+        sus = [u for u in sus if u != r.url][:10]
+        if sus and os.getenv("GSB_API_KEY") and (time.perf_counter() - overall_start) < (overall_budget - 6):
+            body = {
+                "client": {"clientId": "idei-auditor", "clientVersion": "1.0"},
+                "threatInfo": {
+                    "threatTypes": ["MALWARE","SOCIAL_ENGINEERING","UNWANTED_SOFTWARE","POTENTIALLY_HARMFUL_APPLICATION"],
+                    "platformTypes": ["ANY_PLATFORM"],
+                    "threatEntryTypes": ["URL"],
+                    "threatEntries": [{"url": u} for u in sus],
+                },
+            }
+            try:
+                multi = requests.post(
+                    f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={os.getenv('GSB_API_KEY','')}",
+                    json=body, headers=UA, timeout=REQ_TIMEOUT
+                )
+                report.setdefault("security_reputation", {})["gsb_suspects"] = multi.json() if multi.ok else {}
+            except Exception as _e:
+                report.setdefault("security_reputation", {})["gsb_suspects_error"] = str(_e)
+    else:
+        report["malware_scan"] = {"enabled": False}
 
 
     report["ux"] = {}
 
     axe = {"enabled": False, "violations": []}
-    if (time.perf_counter() - overall_start) < (overall_budget - 20):
+    if enable_ux and (time.perf_counter() - overall_start) < (overall_budget - 20):
         try:
             axe = axe_scan(r.url)
         except Exception as _e:
@@ -1089,7 +1092,7 @@ def analyze(url):
 
 
     crux = {"enabled": False}
-    if (time.perf_counter() - overall_start) < (overall_budget - 10):
+    if enable_ux and (time.perf_counter() - overall_start) < (overall_budget - 10):
         try:
             crux = crux_site(r.url)
         except Exception as _e:
