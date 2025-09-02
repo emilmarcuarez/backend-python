@@ -1952,6 +1952,10 @@ def print_report(rid):
 
         plugins_str = " · ".join(plugins_list) if plugins_list else "—"
         themes_str = ", ".join(theme_candidates) if theme_candidates else "—"
+        
+        # HTML para plugins y temas
+        plugins_list_html = "<span class='ok'>✔ Sin plugins detectados</span>" if not plugins_list else "<ul class='list'>" + "".join(f"<li>{esc(plugin)}</li>" for plugin in plugins_list) + "</ul>"
+        themes_list_html = "<span class='ok'>✔ Sin temas detectados</span>" if not theme_candidates else "<ul class='list'>" + "".join(f"<li>{esc(theme)}</li>" for theme in theme_candidates) + "</ul>"
 
         def yn(val, ok="Sí", no="No", dash="—"):
             return ok if val is True else (no if val is False else dash)
