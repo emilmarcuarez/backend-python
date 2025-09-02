@@ -2944,37 +2944,7 @@ def print_report(rid):
 
 
 
-      <div class="subsection">
-        <div class="subsection-title">Análisis de Contenido Sospechoso</div>
-      <div class="body">
-          <div class="kv"><b>Nivel de Riesgo:</b> %s</div>
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎰 Contenido de Casino/Juegos</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📧 Contenido Spam</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">⚠️ Patrones Maliciosos</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔗 Enlaces Sospechosos</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">💻 Scripts Sospechosos</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🖼️ Imágenes Sospechosas</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🌐 Recursos Externos</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">👁️ Elementos Ocultos</h3>
-          %s
-        </div>
-      </div>
-    </div>
+
 
     <!-- SECCIÓN UI/UX -->
     <div class="main-section">
@@ -3087,7 +3057,36 @@ def print_report(rid):
         </div>
       </div>
 
-
+      <div class="subsection">
+        <div class="subsection-title">Análisis de Contenido Sospechoso</div>
+        <div class="body">
+          <div class="kv"><b>Nivel de Riesgo:</b> %s</div>
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎰 Contenido de Casino/Juegos</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📧 Contenido Spam</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">⚠️ Patrones Maliciosos</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔗 Enlaces Sospechosos</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">💻 Scripts Sospechosos</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🖼️ Imágenes Sospechosas</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🌐 Recursos Externos</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">👁️ Elementos Ocultos</h3>
+          %s
+        </div>
+      </div>
 
     <div class="section no-break">
       <div class="title">Acciones sugeridas</div>
