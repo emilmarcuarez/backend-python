@@ -1188,7 +1188,7 @@ def print_report(rid):
   .wrap{ max-width:960px; margin:0 auto; padding:0 8mm }
   .page{ page-break-after:always; }
   
- .no-break {
+.page .cover .page .no-break {
   page-break-inside: avoid;
   display: flex;
   flex-direction: column;
@@ -1197,7 +1197,7 @@ def print_report(rid):
   text-align: center;       
 }
 @media print {
-  .no-break {
+  .page .cover .no-break {
     min-height: 100%%;       
   }
 }
