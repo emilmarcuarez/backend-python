@@ -2771,14 +2771,13 @@ def print_report(rid):
       <div class="subsection">
         <div class="subsection-title">WordPress</div>
         <div class="body">
-          <ul class="list">
-            %s
-            %s
-            %s
-            %s
-            <li><b>Temas:</b> %s</li>
-            <li><b>Plugins:</b> %s</li>
-          </ul>
+          <div class="kv"><b>Versión:</b> %s</div>
+          <div class="kv"><b>Última versión:</b> %s</div>
+          <div class="kv"><b>Desactualizado:</b> %s</div>
+          <div class="kv"><b>Plugins detectados:</b></div>
+          %s
+          <div class="kv"><b>Temas detectados:</b></div>
+          %s
         </div>
       </div>
 
@@ -3102,13 +3101,7 @@ alert_html,
             headers_html,
             cookies_html,
 
-            # wordpress
-            ("<li>/readme.html expuesto</li>" if wp.get("readme_exposed") else ""),
-            ("<li>/xmlrpc.php accesible</li>" if wp.get("xmlrpc_accessible") else ""),
-            ("<li>/wp-login.php expuesto</li>" if wp.get("wp_login_exposed") else ""),
-            ("<li>/wp-json/ disponible</li>" if wp.get("rest_api") else ""),
-            esc(themes_str),
-            esc(plugins_str),
+
 
             # contenido mixto
             mixed_html,
@@ -3177,9 +3170,6 @@ alert_html,
             ("Expuesto" if wc_rest_exposed is True else ("OK" if wc_rest_exposed is False else "—")),
             yn(acf_rest in (True, 200, 401, 403)),
             esc(jquery_version or "—"),
-
-            # WPScan
-
 
             # Análisis de Contenido
             risk_html,
