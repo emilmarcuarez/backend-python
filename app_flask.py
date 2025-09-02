@@ -11,7 +11,7 @@ from datetime import datetime
 from urllib.parse import urlparse, urljoin
 
 import requests
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS, cross_origin
 
 # SQLAlchemy (modo síncrono)
@@ -387,8 +387,6 @@ def compute_score_with_details(report):
     return score, grade, risk, details
 
 
-
-# ---- WordPress ----
 def wp_heuristics(html_text):
     data = {
         "is_wordpress": False,
@@ -686,18 +684,7 @@ _A_RE  = re.compile(r'<a\b[^>]*>', re.I)
 _IMG_RE = re.compile(r'<img\b[^>]*>', re.I)
 
 def seo_structure_from_html(html_text: str) -> dict:
-    """
-    Devuelve:
-    {
-      "h1": int, "h2": int, "h3": int, "h4": int,
-      "p": int, "ul": int, "ol": int, "a": int, "img": int,
-      "issues": [str, ...]
-    }
-    Reglas básicas:
-      - Debe existir 1 único H1 (0 o >1 = issue).
-      - Recomendable tener H2 (si 0 = issue leve).
-      - Si no hay headings (h1-h4) = issue.
-    """
+
     counts = {"h1":0,"h2":0,"h3":0,"h4":0,"p":0,"ul":0,"ol":0,"a":0,"img":0}
     issues = []
 
@@ -726,7 +713,7 @@ def seo_structure_from_html(html_text: str) -> dict:
                 if level in ("1","2","3","4"):
                     counts["h"+level] += 1
     else:
-        # Sin BeautifulSoup (regex básico)
+
         text = html_text or ""
         counts["p"]  = len(_P_RE.findall(text))
         counts["ul"] = len(_UL_RE.findall(text))
@@ -738,7 +725,7 @@ def seo_structure_from_html(html_text: str) -> dict:
             if level in ("1","2","3","4"):
                 counts["h"+level] += 1
 
-    # Validaciones
+  
     if counts["h1"] == 0:
         issues.append("No hay H1 en la página (debe existir exactamente 1).")
     elif counts["h1"] > 1:
@@ -756,13 +743,13 @@ def seo_structure_from_html(html_text: str) -> dict:
 
 def analyze(url):
     url = norm_url(url.strip())
-    session = make_session()  # Usar la sesión configurada con retries
+    session = make_session()
     
     try:
         r = session.get(url, timeout=REQ_TIMEOUT, allow_redirects=True)
         session.headers.update(UA)
     except Exception as e:
-        # Si falla la conexión inicial, devolver un reporte básico
+       
         return {
             "url": url,
             "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -785,7 +772,6 @@ def analyze(url):
         "tls": {},
         "wp": {},
         "warnings": [],
-        # Nuevos bloques
         "server_fingerprint": {},
         "host": {},
         "waf_cdn": {},
@@ -813,7 +799,7 @@ def analyze(url):
         "score": 100
     }
 
-    # 1) Home
+
     r = session.get(url, headers=UA, timeout=12, allow_redirects=True)
     report["server"] = r.headers.get("Server")
     report["x_powered_by"] = r.headers.get("X-Powered-By")
@@ -825,18 +811,18 @@ def analyze(url):
     if host:
         report["tls"] = tls_basic(host)
 
-    # 2) WordPress heuristics
+
     wpdata = wp_heuristics(r.text)
     report["wp"] = wpdata
 
-    # 3) Probes si aún no es WP
+
     if not report["wp"]["is_wordpress"]:
         ps = wp_probes(url, session)
         if ps:
             report["wp"]["is_wordpress"] = True
             report["warnings"].append("Huellas WP detectadas en: " + ", ".join([p for p,_ in ps]))
 
-    # 4) Endpoints WP
+
     check_wp_endpoints(url, session, report["wp"])
 
     try:
@@ -851,7 +837,7 @@ def analyze(url):
     except Exception:
         pass
 
-    # 5) Extras
+
     report["server_fingerprint"] = fingerprint_server(r.headers)
     report["waf_cdn"] = detect_waf_cdn(r.headers)
     if host:
@@ -875,26 +861,28 @@ def analyze(url):
     report["open_directories"] = check_directory_listing(url, session)
     report["admin_ajax_open"] = check_admin_ajax(url, session)
 
-    # 6) Vulnerabilidades (WPScan)
+
     if WPSCAN_API_TOKEN:
         try:
             report["vulns"] = enrich_with_wpscan(r.text, report["wp"])
         except Exception:
             report["vulns"] = None
 
-    # 7) Score
+
     score, grade, risk, details = compute_score_with_details(report)
     report["score"] = score
     report["grade"] = grade
     report["risk_level"] = risk
     report["score_details"] = details
 
-    # 8) Agregar is_wordpress al nivel raíz para consistencia con el frontend
+
     report["is_wordpress"] = report.get("wp", {}).get("is_wordpress", False)
 
     return report
 
-
+@app.route('/<path:filename>')
+def serve_file(filename):
+    return send_from_directory(os.path.dirname(__file__), filename)
 
 # ------------------ ENDPOINTS ------------------
 @app.route("/health", methods=["GET"])
@@ -1180,6 +1168,7 @@ def print_report(rid):
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
 <title>Escáner de seguridad WordPress · Reporte #%d</title>
 <style>
   :root{
@@ -1191,7 +1180,8 @@ def print_report(rid):
   @page{ margin:20mm }
   *{ box-sizing:border-box }
   html,body{ margin:0; padding:0; color:var(--ink);
-    font:14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Roboto, Arial;
+    font:14px/1.6;
+     font-family:'Outfit', system-ui, Avenir, Helvetica, Arial, sans-serif;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   body{ background:var(--bg) }
@@ -1220,7 +1210,7 @@ def print_report(rid):
   .section{ background:var(--paper); border:1px solid var(--line); margin:7mm 0; padding: 15px;}
   .section .title{
     background:var(--brand); color:#fff; font-weight:800; letter-spacing:.02em;
-    padding:6mm 8mm; font-size:16px; display:flex; align-items:center; justify-content:space-between
+    padding:3mm 8mm; font-size:16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:2mm;
   }
   pre{
       white-space: pre-wrap;
@@ -1264,7 +1254,7 @@ def print_report(rid):
     <div class="page cover no-break">
       <div class="kicker">IDEI Auditor</div>
       <div style="text-align:center; margin-bottom:20mm;">
-        <img src="ideidev.png" alt="Logo" style="max-width:300px; height:auto;" />
+       <img src="/ideidev.png" alt="Logo" />
       </div>
       <h1>Escáner de seguridad WordPress</h1>
       <h2>Resumen ejecutivo del Sitio Analizado</h2>
