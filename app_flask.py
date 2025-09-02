@@ -11,7 +11,8 @@ from datetime import datetime
 from urllib.parse import urlparse, urljoin
 
 import requests
-from flask import Flask, request, jsonify, Response, send_from_directory
+
+from flask import Flask, request, jsonify, Response, send_from_directory, make_response
 from flask_cors import CORS, cross_origin
 
 # SQLAlchemy (modo síncrono)
@@ -21,6 +22,13 @@ from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter, Retry
 from service.ux import crux_site, axe_scan, heuristics_ux
 from service.malware import scan_site_malware
+# --- Jobs simples en memoria (rápido y sin dependencias) ---
+import threading, time, uuid
+from typing import Dict, Any
+from flask import request, jsonify
+
+RUNNING_JOBS: Dict[str, Dict[str, Any]] = {}  # job_id -> status/info
+JOB_TTL_SECONDS = 3600  # limpia jobs viejos
 
 load_dotenv()
 
@@ -75,6 +83,26 @@ ALLOWED_ORIGINS = [
     "https://analisis.ideidev.com"
 ]
 
+@app.before_request
+def _cors_preflight():
+    if request.method == "OPTIONS":
+        origin = request.headers.get("Origin", "*")
+        resp = make_response(("", 204))
+        resp.headers["Access-Control-Allow-Origin"] = origin if origin in ALLOWED_ORIGINS else "null"
+        resp.headers["Vary"] = "Origin"
+        resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = request.headers.get("Access-Control-Request-Headers", "Content-Type, Authorization")
+        resp.headers["Access-Control-Max-Age"] = "86400"
+        return resp
+
+@app.after_request
+def _cors_headers(resp):
+    origin = request.headers.get("Origin")
+    if origin and (origin in ALLOWED_ORIGINS):
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp.headers["Vary"] = "Origin"
+    return resp
+
 CORS(
     app,
     resources={r"/*": {"origins": ALLOWED_ORIGINS}},
@@ -123,6 +151,17 @@ def get_db():
         yield db
     finally:
         db.close()
+
+#jobssss ojala que siii
+def _job_set(job_id: str, **fields):
+    RUNNING_JOBS.setdefault(job_id, {}).update(fields)
+    RUNNING_JOBS[job_id]["updated_at"] = time.time()
+
+def _job_gc():
+    now = time.time()
+    old = [j for j, info in RUNNING_JOBS.items() if now - info.get("updated_at", now) > JOB_TTL_SECONDS]
+    for j in old:
+        RUNNING_JOBS.pop(j, None)
 
 
 def norm_url(u):
@@ -1194,6 +1233,44 @@ def analyze(url):
 
     return report
 
+
+def _do_scan_and_save(url: str, assume_wp: bool, job_id: str):
+    try:
+        _job_set(job_id, status="running", step="start")
+
+        os.environ["ANALYZE_BUDGET_SECONDS"] = os.getenv("ANALYZE_BUDGET_SECONDS", "60")
+        extra = {"mal_max_pages": 80, "mal_budget": 0.6, "psi": True}
+
+        _job_set(job_id, step="analyze")
+        rep = analyze(url, assume_wp=assume_wp, **extra)
+
+        _job_set(job_id, step="save")
+        db = SessionLocal()
+        try:
+            # busca o crea el Site
+            site = db.query(Site).filter(Site.url == url).one_or_none()
+            if not site:
+                site = Site(url=url)
+                db.add(site)
+                db.commit()
+                db.refresh(site)
+
+            # crea el Report
+            rep_obj = Report(site_id=site.id, report_json=json.dumps(rep), score=rep.get("score"))
+            db.add(rep_obj)
+            db.commit()
+            db.refresh(rep_obj)
+            rid = rep_obj.id
+        finally:
+            db.close()
+
+        _job_set(job_id, status="done", report_id=rid, url=url)
+    except Exception as e:
+        _job_set(job_id, status="error", error=str(e))
+    finally:
+        _job_gc()
+
+
 @app.route('/<path:filename>')
 def serve_file(filename):
     return send_from_directory(os.path.dirname(__file__), filename)
@@ -1224,35 +1301,52 @@ def scan():
   allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
   max_age=86400,
 )
-def scan_save():
-    data = request.get_json(silent=True) or {}
-    url = data.get("url") or ""
+def scan_save_async():
+    data = request.get_json(silent=True, force=True) or {}
+    url = data.get("url") or request.args.get("url")
     if not url:
-        return jsonify({"detail":"Falta 'url'"}), 400
-    
-    try:
-        rep = analyze(url)
-        if not rep.get("wp",{}).get("is_wordpress"):
-            return jsonify({"detail": "El sitio no parece ser WordPress (heurística)."}), 400
-    except Exception as e:
-        return jsonify({"detail": f"Error durante el análisis: {str(e)}"}), 500
+        return jsonify({"detail": "url requerida"}), 400
 
-    db = SessionLocal()
-    try:
+    assume_wp = bool(data.get("assume_wp") or (request.args.get("assume_wp") == "1"))
+
+    job_id = uuid.uuid4().hex
+    _job_set(job_id, status="queued", url=url, assume_wp=assume_wp)
+
+    t = threading.Thread(target=_do_scan_and_save, args=(url, assume_wp, job_id), daemon=True)
+    t.start()
+
+    # Responder rápido (evita 524)
+    return jsonify({"accepted": True, "job_id": job_id}), 202
+  # def scan_save():
+  
+     #  data = request.get_json(silent=True) or {}
+      # url = data.get("url") or ""
+      # if not url:
+         #  return jsonify({"detail":"Falta 'url'"}), 400
+    
+    #   try:
+       #    rep = analyze(url)
+        #   if not rep.get("wp",{}).get("is_wordpress"):
+       #        return jsonify({"detail": "El sitio no parece ser WordPress (heurística)."}), 400
+     #  except Exception as e:
+     #      return jsonify({"detail": f"Error durante el análisis: {str(e)}"}), 500
+
+    #   db = SessionLocal()
+     #  try:
         # upsert site
-        site = db.query(Site).filter(Site.url == url).one_or_none()
-        if not site:
-            site = Site(url=url)
-            db.add(site)
-            db.flush()
-        r = Report(site_id=site.id, score=int(rep.get("score") or 0), report_json=json.dumps(rep, ensure_ascii=False))
-        db.add(r)
-        db.commit()
+       #    site = db.query(Site).filter(Site.url == url).one_or_none()
+      #     if not site:
+      #         site = Site(url=url)
+     #          db.add(site)
+    #           db.flush()
+    #       r = Report(site_id=site.id, score=int(rep.get("score") or 0), report_json=json.dumps(rep, ensure_ascii=False))
+    #       db.add(r)
+    #       db.commit()
         # Asegurar que el reporte devuelto tenga is_wordpress al nivel raíz
-        rep["is_wordpress"] = rep.get("wp", {}).get("is_wordpress", False)
-        return jsonify({"id": r.id, "site_id": site.id, "url": site.url, "score": r.score, "created_at": r.created_at.isoformat(), "report": rep})
-    finally:
-        db.close()
+  #         rep["is_wordpress"] = rep.get("wp", {}).get("is_wordpress", False)
+    #       return jsonify({"id": r.id, "site_id": site.id, "url": site.url, "score": r.score, "created_at": r.created_at.isoformat(), "report": rep})
+  #     finally:
+  #         db.close()
 
 @app.route("/reports", methods=["GET"])
 def list_reports():
@@ -1281,6 +1375,15 @@ def get_report(rid):
         return jsonify({"id": rep_obj.id, "site_id": site.id, "url": site.url, "score": rep_obj.score, "created_at": rep_obj.created_at.isoformat(), "report": rep})
     finally:
         db.close()
+
+@app.get("/scan-status")
+def scan_status():
+    job_id = request.args.get("job_id")
+    info = RUNNING_JOBS.get(job_id)
+    if not info:
+        return jsonify({"status": "unknown"}), 404
+    return jsonify(info), 200
+
 
 @app.route("/reports/<int:rid>", methods=["DELETE"])
 def delete_report(rid):
