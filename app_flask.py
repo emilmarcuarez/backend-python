@@ -2803,17 +2803,6 @@ def print_report(rid):
         </div>
       </div>
 
-      <div class="subsection">
-        <div class="subsection-title">Meta Tags y Schema</div>
-        <div class="body">
-          <div class="kv"><b>Canonical:</b> %s</div>
-          <div class="kv"><b>Open Graph:</b> %s</div>
-          <div class="kv"><b>Twitter Card:</b> %s</div>
-          <div class="kv"><b>Schema.org:</b> %s</div>
-          <div class="kv"><b>Hreflang:</b> %s</div>
-          <div class="kv"><b>Alt text en imágenes:</b> %s</div>
-        </div>
-      </div>
     </div>
 
       <div class="section">
@@ -2894,30 +2883,7 @@ def print_report(rid):
     </div>
 
 
-      <div class="subsection">
-        <div class="subsection-title">APIs de Seguridad</div>
-        <div class="body">
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔍 Google Safe Browsing</h3>
-          <div class="kv"><b>Estado:</b> %s</div>
-          <div class="kv"><b>Detalles:</b></div>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🛡️ VirusTotal</h3>
-          <div class="kv"><b>Estado:</b> %s</div>
-          <div class="kv"><b>Detalles:</b></div>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🚨 URLHaus</h3>
-          <div class="kv"><b>Estado:</b> %s</div>
-          <div class="kv"><b>Detalles:</b></div>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎣 PhishTank</h3>
-          <div class="kv"><b>Estado:</b> %s</div>
-          <div class="kv"><b>Detalles:</b></div>
-          %s
-        </div>
-      </div>
+
 
       <div class="subsection">
         <div class="subsection-title">Análisis de Contenido Sospechoso</div>
@@ -3008,6 +2974,18 @@ def print_report(rid):
           %s
         </div>
       </div>
+
+      <div class="subsection">
+        <div class="subsection-title">Meta Tags y Schema</div>
+        <div class="body">
+          <div class="kv"><b>Canonical:</b> %s</div>
+          <div class="kv"><b>Open Graph:</b> %s</div>
+          <div class="kv"><b>Twitter Card:</b> %s</div>
+          <div class="kv"><b>Schema.org:</b> %s</div>
+          <div class="kv"><b>Hreflang:</b> %s</div>
+          <div class="kv"><b>Alt text en imágenes:</b> %s</div>
+        </div>
+      </div>
     </div>
 
     <!-- SECCIÓN SEGURIDAD -->
@@ -3021,6 +2999,31 @@ def print_report(rid):
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">URLs sospechosas</h3>
           %s
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">Evidencias (snippets)</h3>
+          %s
+        </div>
+      </div>
+
+      <div class="subsection">
+        <div class="subsection-title">APIs de Seguridad</div>
+        <div class="body">
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔍 Google Safe Browsing</h3>
+          <div class="kv"><b>Estado:</b> %s</div>
+          <div class="kv"><b>Detalles:</b></div>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🛡️ VirusTotal</h3>
+          <div class="kv"><b>Estado:</b> %s</div>
+          <div class="kv"><b>Detalles:</b></div>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🚨 URLHaus</h3>
+          <div class="kv"><b>Estado:</b> %s</div>
+          <div class="kv"><b>Detalles:</b></div>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎣 PhishTank</h3>
+          <div class="kv"><b>Estado:</b> %s</div>
+          <div class="kv"><b>Detalles:</b></div>
           %s
         </div>
       </div>
