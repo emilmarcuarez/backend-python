@@ -1137,7 +1137,7 @@ def wp_heuristics(html_text):
         for m in re.finditer(pattern, html_text, re.I):
             name = m.group(1).strip()
             if name and name not in data["theme_candidates"] and len(name) > 2:
-                data["theme_candidates"].append(name)
+            data["theme_candidates"].append(name)
     
     # Detectar plugins - múltiples patrones
     plugin_patterns = [
@@ -1152,7 +1152,7 @@ def wp_heuristics(html_text):
         for m in re.finditer(pattern, html_text, re.I):
             slug = m.group(1).strip()
             if slug and slug not in data["plugins"] and len(slug) > 2:
-                data["plugins"][slug] = []
+            data["plugins"][slug] = []
     return data
 
 def wp_probes(base_url, session):
@@ -3166,7 +3166,7 @@ alert_html,
 
 
             # contenido mixto
-         mixed_html,
+            mixed_html,
 
             # archivos/dirs
             open_dirs_html,
