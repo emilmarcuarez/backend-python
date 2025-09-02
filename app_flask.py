@@ -607,7 +607,7 @@ def phishtank_check(url):
                     "total_entries": len(phish_data),
                     "api_status": r.status_code
                 }
-        except Exception:
+    except Exception:
             pass
         
         return {
@@ -667,14 +667,18 @@ def privacy_scan(html_text):
         pass
     return out
 
-def content_security_scan(html_text):
+def content_security_scan(html_text, base_url=""):
     """
-    Análisis de contenido para detectar patrones sospechosos como casinos, juegos, spam, etc.
+    Análisis exhaustivo de contenido para detectar patrones sospechosos, scripts, imágenes rotas, etc.
     """
     suspicious_patterns = {
         "casino_keywords": [
             "casino", "juego", "apuesta", "poker", "ruleta", "tragamonedas", "bingo", 
-            "lotería", "azar", "ganar dinero", "bonus", "jackpot", "bet", "gambling"
+            "lotería", "azar", "ganar dinero", "bonus", "jackpot", "bet", "gambling",
+            "buscador de números de lotería", "desbloquea un nivel", "clímax de sesión",
+            "grandes ganancias", "pagos sustanciales", "centurión", "plata", "oro", "platino",
+            "ultimate", "constantemente se agregan", "super15 stars", "blazing bullfrog",
+            "codex of fortune", "baraja de poker", "bono de regalo", "dinero real"
         ],
         "spam_keywords": [
             "viagra", "cialis", "pharmacy", "pills", "weight loss", "diet", "loan", 
@@ -686,6 +690,10 @@ def content_security_scan(html_text):
         ],
         "suspicious_domains": [
             "bit.ly", "tinyurl", "goo.gl", "t.co", "short.link", "redirect"
+        ],
+        "suspicious_scripts": [
+            "eval(", "Function(", "document.write(", "atob(", "unescape(",
+            "fromCharCode(", "setTimeout(", "new Function(", "window.onload"
         ]
     }
     
@@ -695,21 +703,48 @@ def content_security_scan(html_text):
         "spam_content": [],
         "malicious_content": [],
         "suspicious_links": [],
+        "suspicious_scripts": [],
+        "broken_images": [],
+        "external_resources": [],
+        "hidden_elements": [],
         "risk_score": 0
     }
     
-    # Detectar contenido de casino/juegos
+    # Detectar contenido de casino/juegos con contexto
     for keyword in suspicious_patterns["casino_keywords"]:
         if keyword in text_lower:
             count = text_lower.count(keyword)
-            findings["casino_content"].append({"keyword": keyword, "count": count})
+            # Buscar contexto alrededor de la palabra
+            contexts = []
+            for match in re.finditer(re.escape(keyword), text_lower):
+                start = max(0, match.start() - 50)
+                end = min(len(html_text), match.end() + 50)
+                context = html_text[start:end].strip()
+                contexts.append(context)
+            
+            findings["casino_content"].append({
+                "keyword": keyword, 
+                "count": count,
+                "contexts": contexts[:3]  # Primeros 3 contextos
+            })
             findings["risk_score"] += count * 2
     
-    # Detectar spam
+    # Detectar spam con contexto
     for keyword in suspicious_patterns["spam_keywords"]:
         if keyword in text_lower:
             count = text_lower.count(keyword)
-            findings["spam_content"].append({"keyword": keyword, "count": count})
+            contexts = []
+            for match in re.finditer(re.escape(keyword), text_lower):
+                start = max(0, match.start() - 50)
+                end = min(len(html_text), match.end() + 50)
+                context = html_text[start:end].strip()
+                contexts.append(context)
+            
+            findings["spam_content"].append({
+                "keyword": keyword, 
+                "count": count,
+                "contexts": contexts[:3]
+            })
             findings["risk_score"] += count * 3
     
     # Detectar patrones maliciosos
@@ -719,20 +754,74 @@ def content_security_scan(html_text):
             findings["malicious_content"].append({"pattern": pattern, "count": count})
             findings["risk_score"] += count * 2
     
+    # Detectar scripts sospechosos
+    scripts = re.findall(r'<script[^>]*>(.*?)</script>', html_text, re.I | re.S)
+    for i, script in enumerate(scripts):
+        script_lower = script.lower()
+        for suspicious_script in suspicious_patterns["suspicious_scripts"]:
+            if suspicious_script in script_lower:
+                findings["suspicious_scripts"].append({
+                    "script_index": i,
+                    "pattern": suspicious_script,
+                    "snippet": script[:200] + "..." if len(script) > 200 else script
+                })
+                findings["risk_score"] += 5
+    
     # Detectar enlaces sospechosos
     links = re.findall(r'href=["\']([^"\']+)["\']', html_text, re.I)
     for link in links:
         for domain in suspicious_patterns["suspicious_domains"]:
             if domain in link.lower():
-                findings["suspicious_links"].append(link)
+                findings["suspicious_links"].append({
+                    "url": link,
+                    "type": "suspicious_domain",
+                    "domain": domain
+                })
                 findings["risk_score"] += 5
     
     # Detectar iframes sospechosos
     iframes = re.findall(r'<iframe[^>]+src=["\']([^"\']+)["\']', html_text, re.I)
     for iframe in iframes:
         if any(domain in iframe.lower() for domain in suspicious_patterns["suspicious_domains"]):
-            findings["suspicious_links"].append(f"iframe: {iframe}")
+            findings["suspicious_links"].append({
+                "url": iframe,
+                "type": "suspicious_iframe",
+                "domain": next((d for d in suspicious_patterns["suspicious_domains"] if d in iframe.lower()), "unknown")
+            })
             findings["risk_score"] += 10
+    
+    # Detectar imágenes rotas o sospechosas
+    images = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', html_text, re.I)
+    for img in images:
+        # Detectar imágenes con nombres sospechosos
+        if any(word in img.lower() for word in ["casino", "poker", "slot", "bet", "gambling"]):
+            findings["broken_images"].append({
+                "url": img,
+                "type": "suspicious_name",
+                "reason": "Nombre de imagen sugiere contenido de casino/juegos"
+            })
+            findings["risk_score"] += 2
+    
+    # Detectar recursos externos sospechosos
+    external_scripts = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', html_text, re.I)
+    for script in external_scripts:
+        if any(domain in script.lower() for domain in ["casino", "bet", "gambling", "poker"]):
+            findings["external_resources"].append({
+                "url": script,
+                "type": "external_script",
+                "reason": "Script externo de dominio sospechoso"
+            })
+            findings["risk_score"] += 3
+    
+    # Detectar elementos ocultos
+    hidden_elements = re.findall(r'<[^>]+style=["\'][^>]*(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0)[^>]*["\'][^>]*>', html_text, re.I)
+    for element in hidden_elements:
+        findings["hidden_elements"].append({
+            "element": element[:100] + "..." if len(element) > 100 else element,
+            "type": "hidden_element",
+            "reason": "Elemento con estilo oculto detectado"
+        })
+        findings["risk_score"] += 2
     
     findings["risk_level"] = "HIGH" if findings["risk_score"] > 20 else "MEDIUM" if findings["risk_score"] > 10 else "LOW"
     
@@ -1000,96 +1089,7 @@ def wp_latest_version(session):
     return None
 
 
-WPSCAN_API_TOKEN = os.environ.get("WPSCAN_API_TOKEN")
-WPSCAN_BASE = "https://wpscan.com/api/v3"
-
-def _wpscan_headers():
-    return {"Authorization": "Token token=%s" % WPSCAN_API_TOKEN, "Accept": "application/json"}
-
-def wpscan_api_get(path, params=None, timeout=10):
-    if not WPSCAN_API_TOKEN:
-        return None
-    try:
-        resp = requests.get(WPSCAN_BASE + path, headers=_wpscan_headers(), params=params or {}, timeout=timeout)
-        if resp.status_code == 200:
-            return resp.json()
-        return None
-    except Exception:
-        return None
-
-_VERSION_RE = re.compile(r'[\?&]ver=([0-9]+\.[0-9]+(?:\.[0-9]+)?)|\bver[-_]?([0-9]+\.[0-9]+(?:\.[0-9]+)?)', re.I)
-
-def extract_version_from_html_for_slug(html_text, slug, is_plugin=True):
-    try:
-        folder = "plugins" if is_plugin else "themes"
-        block_re = re.compile(r'/wp-content/%s/%s/[^"\']+' % (folder, re.escape(slug)), re.I)
-        candidates = block_re.findall(html_text)
-        for c in candidates:
-            m = _VERSION_RE.search(c)
-            if m:
-                return (m.group(1) or m.group(2) or "").strip()
-    except Exception:
-        pass
-    return None
-
-def wpscan_core_vulns(core_version):
-    if not core_version:
-        return None
-    data = wpscan_api_get("/wordpresses/%s" % core_version)
-    if not data:
-        return None
-    vulns = data.get("vulnerabilities") or []
-    return {"version": core_version, "count": len(vulns), "items": vulns}
-
-def wpscan_plugin_vulns(slug, version=None):
-    data = wpscan_api_get("/plugins/%s" % slug)
-    if not data:
-        return None
-    vulns = data.get("vulnerabilities") or []
-    return {"slug": slug, "version": version, "count": len(vulns), "items": vulns}
-
-def wpscan_theme_vulns(slug, version=None):
-    data = wpscan_api_get("/themes/%s" % slug)
-    if not data:
-        return None
-    vulns = data.get("vulnerabilities") or []
-    return {"slug": slug, "version": version, "count": len(vulns), "items": vulns}
-
-def enrich_with_wpscan(report, api_token: str):
-    slugs = list((report.get("wp") or {}).get("plugins", {}).keys())
-    themes = list((report.get("wp") or {}).get("theme_candidates", []))
-    vulns = report.setdefault("vulns", {"core":{}, "plugins":{}, "themes":{}})
-
-    headers = {"Authorization": f"Token token={api_token}"}
-    for slug in slugs:
-        try:
-            r = requests.get(f"https://wpscan.com/api/v3/plugins/{slug}", headers=headers, timeout=25)
-            data = r.json() if r.ok else {}
-            vulns["plugins"][slug] = {
-                "version": (report.get("wp") or {}).get("plugins", {}).get(slug, {}).get("version", "n/d"),
-                "count": len(data.get("vulnerabilities", [])),
-                "items": [
-                    {"title": v.get("title"), "cve": v.get("cve"), "cvss": (v.get("cvss", {}) or {}).get("score")}
-                    for v in (data.get("vulnerabilities") or [])
-                ],
-            }
-        except Exception:
-            pass
-
-    for theme in themes:
-        try:
-            r = requests.get(f"https://wpscan.com/api/v3/themes/{theme}", headers=headers, timeout=25)
-            data = r.json() if r.ok else {}
-            vulns["themes"][theme] = {
-                "version": "n/d",
-                "count": len(data.get("vulnerabilities", [])),
-                "items": [
-                    {"title": v.get("title"), "cve": v.get("cve"), "cvss": (v.get("cvss", {}) or {}).get("score")}
-                    for v in (data.get("vulnerabilities") or [])
-                ],
-            }
-        except Exception:
-            pass
+# WPScan removido completamente
 
 
 # ------------------ ANALYZE ------------------
@@ -1329,10 +1329,7 @@ def analyze(url, assume_wp=False, **kwargs):
             report["wp"]["is_wordpress"] = True
             report["warnings"].append("Huellas WP detectadas en: " + ", ".join([p for p,_ in ps]))
 
-        # Enriquecer con WPScan si hay token
-    token = os.getenv("WPSCAN_API_TOKEN")
-    if token:
-        enrich_with_wpscan(report, token)
+# WPScan removido
 
     check_wp_endpoints(url, session, report["wp"])
 
@@ -1478,7 +1475,7 @@ def analyze(url, assume_wp=False, **kwargs):
 
     
     report["privacy"] = privacy_scan(r.text)
-    report["content_security"] = content_security_scan(r.text)
+    report["content_security"] = content_security_scan(r.text, r.url)
     report["seo"] = seo_extract(r.text)
     report["seo_structure"] = seo_structure_from_html(r.text)
     
@@ -1496,11 +1493,7 @@ def analyze(url, assume_wp=False, **kwargs):
     report["admin_ajax_open"] = check_admin_ajax(url, session) if maybe(5) else None
 
 
-    if WPSCAN_API_TOKEN:
-        try:
-            enrich_with_wpscan(report, WPSCAN_API_TOKEN)
-        except Exception:
-            report["vulns"] = None
+# WPScan removido
 
 
     score, grade, risk, details = compute_score_with_details(report)
@@ -1911,54 +1904,122 @@ def print_report(rid):
         spam_content = content_sec.get("spam_content") or []
         malicious_content = content_sec.get("malicious_content") or []
         suspicious_links = content_sec.get("suspicious_links") or []
+        suspicious_scripts = content_sec.get("suspicious_scripts") or []
+        broken_images = content_sec.get("broken_images") or []
+        external_resources = content_sec.get("external_resources") or []
+        hidden_elements = content_sec.get("hidden_elements") or []
         risk_score = content_sec.get("risk_score", 0)
         risk_level = content_sec.get("risk_level", "LOW")
 
-        # HTML para contenido de casino
+        # HTML para contenido de casino con contexto
         casino_html = "<span class='ok'>✔ Sin contenido de casino detectado</span>"
         if casino_content:
             casino_items = []
-            for item in casino_content[:10]:  # Mostrar solo los primeros 10
+            for item in casino_content[:8]:
                 keyword = item.get("keyword", "")
                 count = item.get("count", 0)
+                contexts = item.get("contexts", [])
                 casino_items.append(f"<li><b>{esc(keyword)}</b> ({count} veces)</li>")
+                if contexts:
+                    casino_items.append(f"<li class='context-item'>Contexto: {esc(contexts[0][:100])}...</li>")
             casino_html = f"<ul class='list'>{''.join(casino_items)}</ul>"
-            if len(casino_content) > 10:
-                casino_html += f"<div class='muted'>... y {len(casino_content) - 10} más</div>"
+            if len(casino_content) > 8:
+                casino_html += f"<div class='muted'>... y {len(casino_content) - 8} más</div>"
 
-        # HTML para spam
+        # HTML para spam con contexto
         spam_html = "<span class='ok'>✔ Sin spam detectado</span>"
         if spam_content:
             spam_items = []
-            for item in spam_content[:10]:
+            for item in spam_content[:8]:
                 keyword = item.get("keyword", "")
                 count = item.get("count", 0)
+                contexts = item.get("contexts", [])
                 spam_items.append(f"<li><b>{esc(keyword)}</b> ({count} veces)</li>")
+                if contexts:
+                    spam_items.append(f"<li class='context-item'>Contexto: {esc(contexts[0][:100])}...</li>")
             spam_html = f"<ul class='list'>{''.join(spam_items)}</ul>"
-            if len(spam_content) > 10:
-                spam_html += f"<div class='muted'>... y {len(spam_content) - 10} más</div>"
+            if len(spam_content) > 8:
+                spam_html += f"<div class='muted'>... y {len(spam_content) - 8} más</div>"
 
         # HTML para patrones maliciosos
         malicious_html = "<span class='ok'>✔ Sin patrones maliciosos</span>"
         if malicious_content:
             malicious_items = []
-            for item in malicious_content[:10]:
+            for item in malicious_content[:8]:
                 pattern = item.get("pattern", "")
                 count = item.get("count", 0)
                 malicious_items.append(f"<li><b>{esc(pattern)}</b> ({count} veces)</li>")
             malicious_html = f"<ul class='list'>{''.join(malicious_items)}</ul>"
-            if len(malicious_content) > 10:
-                malicious_html += f"<div class='muted'>... y {len(malicious_content) - 10} más</div>"
+            if len(malicious_content) > 8:
+                malicious_html += f"<div class='muted'>... y {len(malicious_content) - 8} más</div>"
+
+        # HTML para scripts sospechosos
+        scripts_html = "<span class='ok'>✔ Sin scripts sospechosos</span>"
+        if suspicious_scripts:
+            script_items = []
+            for script in suspicious_scripts[:10]:
+                pattern = script.get("pattern", "")
+                snippet = script.get("snippet", "")
+                script_items.append(f"<li><b>{esc(pattern)}</b></li>")
+                script_items.append(f"<li class='script-snippet'><pre class='code-snippet'>{esc(snippet)}</pre></li>")
+            scripts_html = f"<ul class='list'>{''.join(script_items)}</ul>"
+            if len(suspicious_scripts) > 10:
+                scripts_html += f"<div class='muted'>... y {len(suspicious_scripts) - 10} más</div>"
 
         # HTML para enlaces sospechosos
         links_html = "<span class='ok'>✔ Sin enlaces sospechosos</span>"
         if suspicious_links:
             links_items = []
-            for link in suspicious_links[:15]:
-                links_items.append(f"<li>{esc(link)}</li>")
+            for link_data in suspicious_links[:15]:
+                if isinstance(link_data, dict):
+                    url = link_data.get("url", "")
+                    link_type = link_data.get("type", "")
+                    domain = link_data.get("domain", "")
+                    links_items.append(f"<li><b>{esc(url)}</b> ({link_type}) - {esc(domain)}</li>")
+                else:
+                    links_items.append(f"<li>{esc(link_data)}</li>")
             links_html = f"<ul class='list'>{''.join(links_items)}</ul>"
             if len(suspicious_links) > 15:
                 links_html += f"<div class='muted'>... y {len(suspicious_links) - 15} más</div>"
+
+        # HTML para imágenes rotas/sospechosas
+        images_html = "<span class='ok'>✔ Sin imágenes sospechosas</span>"
+        if broken_images:
+            image_items = []
+            for img_data in broken_images[:10]:
+                url = img_data.get("url", "")
+                img_type = img_data.get("type", "")
+                reason = img_data.get("reason", "")
+                image_items.append(f"<li><b>{esc(url)}</b> - {esc(reason)}</li>")
+            images_html = f"<ul class='list'>{''.join(image_items)}</ul>"
+            if len(broken_images) > 10:
+                images_html += f"<div class='muted'>... y {len(broken_images) - 10} más</div>"
+
+        # HTML para recursos externos
+        resources_html = "<span class='ok'>✔ Sin recursos externos sospechosos</span>"
+        if external_resources:
+            resource_items = []
+            for res_data in external_resources[:10]:
+                url = res_data.get("url", "")
+                res_type = res_data.get("type", "")
+                reason = res_data.get("reason", "")
+                resource_items.append(f"<li><b>{esc(url)}</b> - {esc(reason)}</li>")
+            resources_html = f"<ul class='list'>{''.join(resource_items)}</ul>"
+            if len(external_resources) > 10:
+                resources_html += f"<div class='muted'>... y {len(external_resources) - 10} más</div>"
+
+        # HTML para elementos ocultos
+        hidden_html = "<span class='ok'>✔ Sin elementos ocultos</span>"
+        if hidden_elements:
+            hidden_items = []
+            for hidden_data in hidden_elements[:8]:
+                element = hidden_data.get("element", "")
+                hidden_type = hidden_data.get("type", "")
+                reason = hidden_data.get("reason", "")
+                hidden_items.append(f"<li><b>{esc(element)}</b> - {esc(reason)}</li>")
+            hidden_html = f"<ul class='list'>{''.join(hidden_items)}</ul>"
+            if len(hidden_elements) > 8:
+                hidden_html += f"<div class='muted'>... y {len(hidden_elements) - 8} más</div>"
 
         # Color del nivel de riesgo
         risk_color = "bad" if risk_level == "HIGH" else "warn" if risk_level == "MEDIUM" else "ok"
@@ -2342,6 +2403,47 @@ def print_report(rid):
       margin: 2px 0;
       font-size: 11px;
     }
+    
+    .context-item {
+      background: #f8fafc;
+      border-left: 3px solid #3b82f6;
+      padding: 4px 8px;
+      margin: 2px 0;
+      font-size: 11px;
+      font-style: italic;
+    }
+    
+    .script-snippet {
+      background: #1f2937;
+      color: #f9fafb;
+      padding: 8px;
+      border-radius: 4px;
+      margin: 4px 0;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      line-height: 1.3;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    
+    .suspicious-resource {
+      background: #fef2f2;
+      border: 1px solid #ef4444;
+      padding: 6px 10px;
+      border-radius: 4px;
+      margin: 2px 0;
+      font-size: 12px;
+    }
+    
+    .hidden-element {
+      background: #f3f4f6;
+      border: 1px solid #6b7280;
+      padding: 6px 10px;
+      border-radius: 4px;
+      margin: 2px 0;
+      font-size: 12px;
+    }
 
 </style>
 </head>
@@ -2557,13 +2659,29 @@ def print_report(rid):
       <div class="title">Análisis de Contenido Sospechoso</div>
       <div class="body">
         <div class="kv"><b>Nivel de Riesgo:</b> %s</div>
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Contenido de Casino/Juegos</h3>
+        
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎰 Contenido de Casino/Juegos</h3>
         %s
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Contenido Spam</h3>
+        
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">📧 Contenido Spam</h3>
         %s
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Patrones Maliciosos</h3>
+        
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">⚠️ Patrones Maliciosos</h3>
         %s
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Enlaces Sospechosos</h3>
+        
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔗 Enlaces Sospechosos</h3>
+        %s
+        
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">💻 Scripts Sospechosos</h3>
+        %s
+        
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">🖼️ Imágenes Sospechosas</h3>
+        %s
+        
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">🌐 Recursos Externos</h3>
+        %s
+        
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">👁️ Elementos Ocultos</h3>
         %s
       </div>
     </div>
@@ -2765,6 +2883,10 @@ alert_html,
             spam_html,
             malicious_html,
             links_html,
+            scripts_html,
+            images_html,
+            resources_html,
+            hidden_html,
 
             # Seguridad / Malware (labels y nums)
             gsb_label,
