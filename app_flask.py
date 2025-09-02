@@ -1417,7 +1417,7 @@ def analyze(url, assume_wp=False, **kwargs):
             except Exception as _e:
                 report.setdefault("security_reputation", {})["gsb_suspects_error"] = str(_e)
     else:
-        report["malware_scan"] = {"enabled": False}
+        report["malware_scan"] = {"enabled": true}
 
 
     report["ux"] = {}
