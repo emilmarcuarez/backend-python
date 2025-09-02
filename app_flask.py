@@ -1299,6 +1299,63 @@ def scan():
   allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
   max_age=86400,
 )
+def scan_save():
+    data = request.get_json(silent=True, force=True) or {}
+    url = data.get("url") or request.args.get("url")
+    if not url:
+        return jsonify({"detail": "url requerida"}), 400
+
+    assume_wp = bool(data.get("assume_wp") or (request.args.get("assume_wp") == "1"))
+
+    try:
+        # Análisis síncrono - devuelve respuesta inmediata
+        rep = analyze(url, assume_wp=assume_wp)
+        
+        if not rep.get("wp",{}).get("is_wordpress") and not assume_wp:
+            return jsonify({"detail": "El sitio no parece ser WordPress (heurística)."}), 400
+
+        # Guardar en base de datos
+        db = SessionLocal()
+        try:
+            # busca o crea el Site
+            site = db.query(Site).filter(Site.url == url).one_or_none()
+            if not site:
+                site = Site(url=url)
+                db.add(site)
+                db.commit()
+                db.refresh(site)
+
+            # crea el Report
+            rep_obj = Report(site_id=site.id, report_json=json.dumps(rep), score=rep.get("score"))
+            db.add(rep_obj)
+            db.commit()
+            db.refresh(rep_obj)
+            rid = rep_obj.id
+            
+            # Asegurar que el reporte devuelto tenga is_wordpress al nivel raíz
+            rep["is_wordpress"] = rep.get("wp", {}).get("is_wordpress", False)
+            
+            return jsonify({
+                "id": rep_obj.id, 
+                "site_id": site.id, 
+                "url": site.url, 
+                "score": rep_obj.score, 
+                "created_at": rep_obj.created_at.isoformat(), 
+                "report": rep
+            })
+        finally:
+            db.close()
+            
+    except Exception as e:
+        return jsonify({"detail": f"Error durante el análisis: {str(e)}"}), 500
+
+@app.route("/scan-save-async", methods=["POST"])
+@cross_origin(
+  origins=["https://analisis.ideidev.com"],
+  methods=["POST", "OPTIONS"],
+  allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+  max_age=86400,
+)
 def scan_save_async():
     data = request.get_json(silent=True, force=True) or {}
     url = data.get("url") or request.args.get("url")
@@ -1315,36 +1372,6 @@ def scan_save_async():
 
     # Responder rápido (evita 524)
     return jsonify({"accepted": True, "job_id": job_id}), 202
-  # def scan_save():
-  
-     #  data = request.get_json(silent=True) or {}
-      # url = data.get("url") or ""
-      # if not url:
-         #  return jsonify({"detail":"Falta 'url'"}), 400
-    
-    #   try:
-       #    rep = analyze(url)
-        #   if not rep.get("wp",{}).get("is_wordpress"):
-       #        return jsonify({"detail": "El sitio no parece ser WordPress (heurística)."}), 400
-     #  except Exception as e:
-     #      return jsonify({"detail": f"Error durante el análisis: {str(e)}"}), 500
-
-    #   db = SessionLocal()
-     #  try:
-        # upsert site
-       #    site = db.query(Site).filter(Site.url == url).one_or_none()
-      #     if not site:
-      #         site = Site(url=url)
-     #          db.add(site)
-    #           db.flush()
-    #       r = Report(site_id=site.id, score=int(rep.get("score") or 0), report_json=json.dumps(rep, ensure_ascii=False))
-    #       db.add(r)
-    #       db.commit()
-        # Asegurar que el reporte devuelto tenga is_wordpress al nivel raíz
-  #         rep["is_wordpress"] = rep.get("wp", {}).get("is_wordpress", False)
-    #       return jsonify({"id": r.id, "site_id": site.id, "url": site.url, "score": r.score, "created_at": r.created_at.isoformat(), "report": rep})
-  #     finally:
-  #         db.close()
 
 @app.route("/reports", methods=["GET"])
 def list_reports():
