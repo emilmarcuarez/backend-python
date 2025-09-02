@@ -120,24 +120,24 @@ SECURITY_HEADERS = [
 ]
 
 
-# Timeouts más conservadores (reduce bloqueos en plataformas PaaS)
-CONNECT_TIMEOUT = 2
-READ_TIMEOUT = 5
+# Timeouts optimizados para respuestas más rápidas
+CONNECT_TIMEOUT = 3
+READ_TIMEOUT = 8
 REQ_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
 
 def make_session():
     s = requests.Session()
     retries = Retry(
-        total=1,              
-        connect=1,
-        read=1,
-        backoff_factor=0.3,    
+        total=0,              # Sin reintentos para respuestas más rápidas
+        connect=0,
+        read=0,
+        backoff_factor=0.1,    
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=frozenset(["GET", "POST"])
     )
     adapter = HTTPAdapter(
-        pool_connections=6,  
-        pool_maxsize=6,      
+        pool_connections=10,  
+        pool_maxsize=10,      
         max_retries=retries
     )
     s.mount("http://", adapter)
@@ -334,7 +334,7 @@ def performance_check(url, session):
     out = {"gzip_br": None, "ttfb_ms": None, "html_size_kb": None, "cache_control": None}
     try:
         t0 = time.perf_counter()
-        r = session.get(url, headers=UA, timeout=12, stream=True)
+        r = session.get(url, headers=UA, timeout=12, stream=False)  # Cambiado a stream=False
         out["ttfb_ms"] = round((time.perf_counter() - t0) * 1000.0, 1)
         enc = (r.headers.get("Content-Encoding") or "").lower()
         out["gzip_br"] = "br" if "br" in enc else ("gzip" if "gzip" in enc else None)
@@ -816,7 +816,7 @@ def check_exposed_backups(url, session):
     """
     Escaneo ligero de posibles backups expuestos.
     Optimizaciones:
-      - HEAD primero (barato). Si 200 y Content-Length grande, confirmar con GET ligero con stream y early close.
+      - HEAD primero (barato). Si 200 y Content-Length grande, confirmar con GET ligero sin stream.
       - Lista reducida de rutas comunes.
       - Límite de 4 segundos de presupuesto local.
       - Max 3 hallazgos para cortar temprano.
@@ -838,10 +838,9 @@ def check_exposed_backups(url, session):
             if head.status_code == 200:
                 size = int(head.headers.get("Content-Length", "0") or 0)
                 if size and size > 1000000:  # >1MB sospechoso
-                    # confirmar con GET stream y cerrar pronto
+                    # confirmar con GET sin stream
                     try:
-                        g = session.get(urljoin(url, path), headers=UA, timeout=REQ_TIMEOUT, stream=True)
-                        g.close()
+                        g = session.get(urljoin(url, path), headers=UA, timeout=REQ_TIMEOUT, stream=False)
                         if g.status_code == 200:
                             exposed.append(path)
                     except Exception:
@@ -947,10 +946,10 @@ def seo_structure_from_html(html_text: str) -> dict:
 
 
 
-def analyze(url):
+def analyze(url, assume_wp=False, **kwargs):
     overall_start = time.perf_counter()
-    # Presupuesto total por defecto más bajo para evitar 524 del proxy
-    overall_budget = float(os.getenv("ANALYZE_BUDGET_SECONDS", "30"))
+    # Presupuesto total optimizado para respuestas más rápidas
+    overall_budget = float(os.getenv("ANALYZE_BUDGET_SECONDS", "20"))
     # Flags para habilitar checks pesados opcionalmente
     enable_psi = os.getenv("ENABLE_PSI", "0") == "1"
     enable_ux  = os.getenv("ENABLE_UX", "0") == "1"
@@ -959,7 +958,7 @@ def analyze(url):
     session = make_session()
     
     try:
-        r = session.get(url, timeout=REQ_TIMEOUT, allow_redirects=True)
+        r = session.get(url, timeout=REQ_TIMEOUT, allow_redirects=True, stream=False)  # Cambiado a stream=False
         session.headers.update(UA)
     except Exception as e:
        
@@ -1017,7 +1016,7 @@ def analyze(url):
     if (time.perf_counter() - overall_start) > overall_budget:
         return {"url": url, "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"), "error": "Tiempo agotado al iniciar", "wp": {"is_wordpress": False}, "is_wordpress": False, "score": 0, "grade": "F", "risk_level": "Critical"}
 
-    r = session.get(url, headers=UA, timeout=REQ_TIMEOUT, allow_redirects=True)
+    r = session.get(url, headers=UA, timeout=REQ_TIMEOUT, allow_redirects=True, stream=False)
     
     # Seguridad / malware (reputación externa)
     report["security_reputation"] = {
@@ -1217,7 +1216,7 @@ def analyze(url):
 
     if WPSCAN_API_TOKEN:
         try:
-            report["vulns"] = enrich_with_wpscan(r.text, report["wp"])
+            enrich_with_wpscan(report, WPSCAN_API_TOKEN)
         except Exception:
             report["vulns"] = None
 
@@ -1238,11 +1237,10 @@ def _do_scan_and_save(url: str, assume_wp: bool, job_id: str):
     try:
         _job_set(job_id, status="running", step="start")
 
-        os.environ["ANALYZE_BUDGET_SECONDS"] = os.getenv("ANALYZE_BUDGET_SECONDS", "60")
-        extra = {"mal_max_pages": 80, "mal_budget": 0.6, "psi": True}
+        os.environ["ANALYZE_BUDGET_SECONDS"] = os.getenv("ANALYZE_BUDGET_SECONDS", "25")
 
         _job_set(job_id, step="analyze")
-        rep = analyze(url, assume_wp=assume_wp, **extra)
+        rep = analyze(url, assume_wp=assume_wp)
 
         _job_set(job_id, step="save")
         db = SessionLocal()
