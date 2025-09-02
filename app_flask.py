@@ -735,19 +735,42 @@ def wpscan_theme_vulns(slug, version=None):
     vulns = data.get("vulnerabilities") or []
     return {"slug": slug, "version": version, "count": len(vulns), "items": vulns}
 
-def enrich_with_wpscan(html_text, wp_block):
-    out = {"core": None, "plugins": {}, "themes": {}}
-    core_ver = (wp_block.get("version") or "").strip()
-    out["core"] = wpscan_core_vulns(core_ver) if core_ver else None
-    plugins = wp_block.get("plugins") or {}
-    for slug in list(plugins.keys()):
-        ver = extract_version_from_html_for_slug(html_text, slug, is_plugin=True)
-        out["plugins"][slug] = wpscan_plugin_vulns(slug, ver)
-    themes = wp_block.get("theme_candidates") or []
-    for slug in themes:
-        ver = extract_version_from_html_for_slug(html_text, slug, is_plugin=False)
-        out["themes"][slug] = wpscan_theme_vulns(slug, ver)
-    return out
+def enrich_with_wpscan(report, api_token: str):
+    slugs = list((report.get("wp") or {}).get("plugins", {}).keys())
+    themes = list((report.get("wp") or {}).get("theme_candidates", []))
+    vulns = report.setdefault("vulns", {"core":{}, "plugins":{}, "themes":{}})
+
+    headers = {"Authorization": f"Token token={api_token}"}
+    for slug in slugs:
+        try:
+            r = requests.get(f"https://wpscan.com/api/v3/plugins/{slug}", headers=headers, timeout=25)
+            data = r.json() if r.ok else {}
+            vulns["plugins"][slug] = {
+                "version": (report.get("wp") or {}).get("plugins", {}).get(slug, {}).get("version", "n/d"),
+                "count": len(data.get("vulnerabilities", [])),
+                "items": [
+                    {"title": v.get("title"), "cve": v.get("cve"), "cvss": (v.get("cvss", {}) or {}).get("score")}
+                    for v in (data.get("vulnerabilities") or [])
+                ],
+            }
+        except Exception:
+            pass
+
+    for theme in themes:
+        try:
+            r = requests.get(f"https://wpscan.com/api/v3/themes/{theme}", headers=headers, timeout=25)
+            data = r.json() if r.ok else {}
+            vulns["themes"][theme] = {
+                "version": "n/d",
+                "count": len(data.get("vulnerabilities", [])),
+                "items": [
+                    {"title": v.get("title"), "cve": v.get("cve"), "cvss": (v.get("cvss", {}) or {}).get("score")}
+                    for v in (data.get("vulnerabilities") or [])
+                ],
+            }
+        except Exception:
+            pass
+
 
 # ------------------ ANALYZE ------------------
 def check_exposed_backups(url, session):
@@ -987,6 +1010,10 @@ def analyze(url):
             report["wp"]["is_wordpress"] = True
             report["warnings"].append("Huellas WP detectadas en: " + ", ".join([p for p,_ in ps]))
 
+        # Enriquecer con WPScan si hay token
+    token = os.getenv("WPSCAN_API_TOKEN")
+    if token:
+        enrich_with_wpscan(report, token)
 
     check_wp_endpoints(url, session, report["wp"])
 
@@ -1046,7 +1073,7 @@ def analyze(url):
     # ===== Malware crawling + DOM render (opcional) =====
     if enable_mal and (time.perf_counter() - overall_start) < (overall_budget - 12):
         try:
-            mal = scan_site_malware(r.url, max_pages=50, per_url_budget=0.6)
+            mal = scan_site_malware(r.url, max_pages=40, per_url_budget=0.15)
         except Exception as _e:
             mal = {"infected": None, "urls": [], "summary": {}, "error": str(_e)}
         report["malware_scan"] = mal
@@ -1261,7 +1288,7 @@ def delete_report(rid):
     try:
         r = db.query(Report).get(rid)
         if not r:
-            return jsonify({"detail":"Reporte no encontradop"}), 404
+            return jsonify({"detail":"Reporte no encontrado"}), 404
         db.delete(r)
         db.commit()
         return Response(status=204)
@@ -1275,7 +1302,7 @@ def print_report(rid):
     try:
         row = db.query(Report, Site).join(Site, Report.site_id==Site.id).filter(Report.id==rid).one_or_none()
         if not row:
-            return jsonify({"detail":"Reporte no encontradoo"}), 404
+            return jsonify({"detail":"Reporte no encontrado"}), 404
 
         rep_obj, site = row
         rep = json.loads(rep_obj.report_json or "{}")
