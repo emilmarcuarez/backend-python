@@ -1198,7 +1198,7 @@ def print_report(rid):
 }
 @media print {
   .no-break {
-    min-height: 100%;       
+    min-height: 100%%;       
   }
 }
   .hrow{ height:8mm }
