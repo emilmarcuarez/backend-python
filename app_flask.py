@@ -1010,7 +1010,6 @@ def print_report(rid):
             try: return html.escape(str(x))
             except Exception: return ""
 
-        # ===== Datos base =====
         wp = rep.get("wp") or {}
         is_wp = bool(wp.get("is_wordpress") or rep.get("is_wordpress"))
         tls = rep.get("tls") or {}
@@ -1135,7 +1134,7 @@ def print_report(rid):
 
         acciones_html = "<span class='ok'>✔ Sin acciones críticas pendientes</span>" if not acciones else "<ul class='list'>%s</ul>" % li(acciones)
 
-        # Bloques WPScan
+
         plugins_block = ""
         for slug, data in plug_v.items():
             if not data: continue
@@ -1175,7 +1174,7 @@ def print_report(rid):
         seo_struct_issues = seo_struct.get("issues") or []
         seo_struct_issues_html = ("<ul class='list'>%s</ul>" % "".join("<li>%s</li>" % esc(i) for i in seo_struct_issues)) if seo_struct_issues else "<span class='ok'>✔ Sin observaciones</span>"
 
-        # ===== HTML (sin transparencias, colores planos) =====
+   
         html_out = """<!doctype html>
 <html lang="es">
 <head>
@@ -1184,7 +1183,7 @@ def print_report(rid):
 <title>Escáner de seguridad WordPress · Reporte #%d</title>
 <style>
   :root{
-    /* Colores planos (sin transparencias) */
+    
     --bg:#f5f7fb; --paper:#ffffff; --ink:#0b1220; --muted:#6a768c;
     --line:#e6eaf2; --brand:#1f7ae0; --brand2:#0fa878; --accent:#111827;
     --ok:#16a34a; --warn:#b45309; --bad:#b91c1c;
@@ -1218,10 +1217,15 @@ def print_report(rid):
   .toc li b{ color:#0f172a }
 
   /* Secciones / Tarjetas */
-  .section{ background:var(--paper); border:1px solid var(--line); margin:7mm 0; }
+  .section{ background:var(--paper); border:1px solid var(--line); margin:7mm 0; padding: 15px;}
   .section .title{
     background:var(--brand); color:#fff; font-weight:800; letter-spacing:.02em;
     padding:6mm 8mm; font-size:16px; display:flex; align-items:center; justify-content:space-between
+  }
+  pre{
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+  padding: 10px;
   }
   .section .body{ padding:6mm 8mm max-with: 100%% !important;}
     .list li {
