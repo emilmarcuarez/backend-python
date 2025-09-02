@@ -19,6 +19,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, F
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter, Retry
+from service.ux import crux_site, axe_scan, heuristics_ux
 load_dotenv()
 
 
@@ -303,6 +304,126 @@ def performance_check(url, session):
     except Exception as e:
         out["error"] = str(e)
     return out
+
+
+# ============== Seguridad / Reputación externas ==============
+
+def gsb_check(url):
+    """
+    Google Safe Browsing v4: amenaza si hay matches.
+    """
+    api_key = os.getenv("GSB_API_KEY")
+    if not api_key:
+        return {"enabled": False, "unsafe": None, "raw": None}
+    body = {
+        "client": {"clientId": "idei-auditor", "clientVersion": "1.0"},
+        "threatInfo": {
+            "threatTypes": [
+                "MALWARE", "SOCIAL_ENGINEERING",
+                "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"
+            ],
+            "platformTypes": ["ANY_PLATFORM"],
+            "threatEntryTypes": ["URL"],
+            "threatEntries": [{"url": url}],
+        },
+    }
+    try:
+        r = requests.post(
+            f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={api_key}",
+            json=body, headers=UA, timeout=REQ_TIMEOUT
+        )
+        data = r.json() if r.ok else {}
+        return {"enabled": True, "unsafe": bool(data.get("matches")), "raw": data}
+    except Exception as e:
+        return {"enabled": True, "unsafe": None, "error": str(e), "raw": None}
+
+
+def vt_check(url):
+    """
+    VirusTotal URL analysis (v3). Gratis ~4/min, 500/día.
+    Resultado sintético: conteo de 'malicious' y 'suspicious'.
+    """
+    api_key = os.getenv("VT_API_KEY")
+    if not api_key:
+        return {"enabled": False, "malicious": None, "suspicious": None, "raw": None}
+    headers = {"x-apikey": api_key, **UA}
+    try:
+        # 1) enviar análisis (cola)
+        post = requests.post("https://www.virustotal.com/api/v3/urls",
+                             data={"url": url}, headers=headers, timeout=REQ_TIMEOUT)
+        post.raise_for_status()
+        analysis_id = (post.json().get("data") or {}).get("id")
+        # 2) leer resultado del análisis
+        if not analysis_id:
+            return {"enabled": True, "malicious": None, "suspicious": None, "raw": post.json()}
+        res = requests.get(
+            f"https://www.virustotal.com/api/v3/analyses/{analysis_id}",
+            headers=headers, timeout=REQ_TIMEOUT
+        )
+        js = res.json() if res.ok else {}
+        stats = (((js.get("data") or {}).get("attributes") or {}).get("stats") or {})
+        return {
+            "enabled": True,
+            "malicious": int(stats.get("malicious", 0)),
+            "suspicious": int(stats.get("suspicious", 0)),
+            "raw": js
+        }
+    except Exception as e:
+        return {"enabled": True, "malicious": None, "suspicious": None, "error": str(e), "raw": None}
+
+
+def urlhaus_check(url):
+    """
+    URLHaus (sin API key). Revisa si el host tiene URLs maliciosas reportadas.
+    """
+    try:
+        host = urlparse(url).hostname or ""
+        r = requests.get(f"https://urlhaus.abuse.ch/api/host/{host}/",
+                         headers=UA, timeout=REQ_TIMEOUT)
+        js = r.json() if r.ok else {}
+        return {"listed": bool(js.get("urls")), "raw": js}
+    except Exception:
+        return {"listed": None, "raw": None}
+
+
+def phishtank_check(url):
+    """
+    PhishTank simple (sin key): solo marca 'desconocido' (puedes integrar su feed con token si quieres).
+    """
+    try:
+        host = urlparse(url).hostname or ""
+        return {"host": host, "listed": None}
+    except Exception:
+        return {"host": None, "listed": None}
+
+
+# ============== PageSpeed / Core Web Vitals ==============
+
+def pagespeed_fetch(url, strategy="mobile"):
+    """
+    Google PageSpeed v5. Extrae LCP/CLS/INP + performance score.
+    """
+    key = os.getenv("PAGESPEED_API_KEY")
+    params = {"url": url, "strategy": strategy}
+    if key:
+        params["key"] = key
+    try:
+        r = requests.get("https://www.googleapis.com/pagespeedonline/v5/runPagespeed",
+                         params=params, headers=UA, timeout=(6, 25))
+        js = r.json() if r.ok else {}
+        lh = js.get("lighthouseResult") or {}
+        audits = lh.get("audits") or {}
+        metrics = {
+            "lcp": (audits.get("largest-contentful-paint") or {}).get("numericValue"),
+            "cls": (audits.get("cumulative-layout-shift") or {}).get("numericValue"),
+            "inp": (audits.get("experimental-interaction-to-next-paint") or {}).get("numericValue"),
+            "perf_score": (lh.get("categories") or {}).get("performance", {}).get("score"),
+        }
+        return {"strategy": strategy, "metrics": metrics, "raw": js}
+    except Exception as e:
+        return {"strategy": strategy, "metrics": {}, "error": str(e), "raw": None}
+
+
 
 def privacy_scan(html_text):
     out = {"third_party_scripts": [], "tracking": {"ga": False, "gtm": False, "fbp": False}, "mailto_found": False}
@@ -801,6 +922,16 @@ def analyze(url):
 
 
     r = session.get(url, headers=UA, timeout=12, allow_redirects=True)
+    
+    # Seguridad / malware (reputación externa)
+    report["security_reputation"] = {
+        "gsb": gsb_check(url),
+        "virustotal": vt_check(url),
+        "urlhaus": urlhaus_check(url),
+        "phishtank": phishtank_check(url),
+    }
+
+    
     report["server"] = r.headers.get("Server")
     report["x_powered_by"] = r.headers.get("X-Powered-By")
     report["security_headers_missing"] = security_headers_missing(r.headers)
@@ -846,6 +977,74 @@ def analyze(url):
     report["wp_users"] = wp_enumerate_users(url, session)
     report["rest"] = rest_details(url, session)
     report["performance"] = performance_check(r.url, session)
+    
+    # PageSpeed (core web vitals)
+    psi_m = pagespeed_fetch(r.url, "mobile")
+    psi_d = pagespeed_fetch(r.url, "desktop")
+    report["pagespeed"] = {"mobile": psi_m, "desktop": psi_d}
+
+    # mete C WV resumidas en performance para que tu UI/impresión lo tenga fácil
+    pm = (psi_m.get("metrics") or {})
+    pd = (psi_d.get("metrics") or {})
+    report["performance"]["lcp"] = pm.get("lcp") or pd.get("lcp")
+    report["performance"]["cls"] = pm.get("cls") or pd.get("cls")
+    report["performance"]["inp"] = pm.get("inp") or pd.get("inp")
+    report["performance"]["psi_score_mobile"] = pm.get("perf_score")
+    report["performance"]["psi_score_desktop"] = pd.get("perf_score")
+
+    report["ux"] = {}
+
+    try:
+        axe = axe_scan(r.url)
+    except Exception as _e:
+        axe = {"enabled": True, "violations": [], "error": str(_e)}
+    report["ux"]["accessibility"] = {
+        "violations_count": len(axe.get("violations") or []),
+        "violations": axe.get("violations") or [],
+        "passes": axe.get("passes"),
+        "incomplete": axe.get("incomplete"),
+    }
+
+
+    try:
+        crux = crux_site(r.url)
+    except Exception as _e:
+        crux = {"enabled": False, "error": str(_e)}
+    report["ux"]["crux"] = crux  
+    try:
+        heu = heuristics_ux(r.text, r.url)
+    except Exception as _e:
+        heu = {"issues": ["No fue posible analizar heurísticas."], "tips": [], "error": str(_e), "counts": {}}
+    report["ux"]["heuristics"] = heu
+    recommend = []
+
+    ax = report["ux"]["accessibility"]
+    if ax.get("violations"):
+        v_by_rule = {}
+        for v in ax["violations"]:
+            key = f"{v.get('id')}: {v.get('help')}"
+            v_by_rule.setdefault(key, 0)
+            v_by_rule[key] += len(v.get("nodes") or [])
+        top3 = sorted(v_by_rule.items(), key=lambda x: x[1], reverse=True)[:3]
+        for k, n in top3:
+            recommend.append(f"Accesibilidad · {k} · {n} elementos afectados. Corrige estas reglas WCAG primero.")
+
+    p75 = (crux.get("p75") or {})
+    if p75.get("lcp_ms") and p75["lcp_ms"] > 4000:
+        recommend.append(f"LCP p75 = {p75['lcp_ms']} ms (lento). Optimiza hero image (AVIF/WebP, preload) y reduce TTFB.")
+    if p75.get("inp_ms") and p75["inp_ms"] > 200:
+        recommend.append(f"INP p75 = {p75['inp_ms']} ms (alta latencia). Divide JS, prioriza input responsiveness, quita listeners pesados.")
+    if p75.get("cls") and p75["cls"] > 0.1:
+        recommend.append(f"CLS p75 = {p75['cls']} (inestable). Reserva dimensiones, evita banners que empujan contenido.")
+
+    for issue in (heu.get("issues") or []):
+        recommend.append(f"UX: {issue}")
+    for tip in (heu.get("tips") or [])[:5]:
+        recommend.append(f"Sugerencia: {tip}")
+
+    report["ux"]["recommendations"] = recommend
+
+    
     report["privacy"] = privacy_scan(r.text)
     report["seo"] = seo_extract(r.text)
     report["seo_structure"] = seo_structure_from_html(r.text)
@@ -1162,6 +1361,44 @@ def print_report(rid):
         seo_struct_issues = seo_struct.get("issues") or []
         seo_struct_issues_html = ("<ul class='list'>%s</ul>" % "".join("<li>%s</li>" % esc(i) for i in seo_struct_issues)) if seo_struct_issues else "<span class='ok'>✔ Sin observaciones</span>"
 
+        # ===== Resumen Seguridad / Malware (labels bonitos) =====
+        sec_rep = rep.get("security_reputation") or {}
+        _gsb = (sec_rep.get("gsb") or {})
+        _vt  = (sec_rep.get("virustotal") or {})
+        _uh  = (sec_rep.get("urlhaus") or {})
+        _pt  = (sec_rep.get("phishtank") or {})
+
+        gsb_label = ("Inseguro" if _gsb.get("unsafe") is True else ("Seguro" if _gsb.get("unsafe") is False else ("—" if _gsb.get("enabled") else "No config")))
+        vt_mal = str(_vt.get("malicious") if _vt.get("malicious") is not None else "—")
+        vt_susp = str(_vt.get("suspicious") if _vt.get("suspicious") is not None else "—")
+        uh_label = ("Listado" if _uh.get("listed") is True else ("No" if _uh.get("listed") is False else "—"))
+        pt_label = ("Sí" if _pt.get("listed") is True else ("No" if _pt.get("listed") is False else "—"))
+
+        # ===== Resumen PageSpeed (CWV) =====
+        psi = rep.get("pagespeed") or {}
+        pm  = (psi.get("mobile") or {}).get("metrics") or {}
+        pd  = (psi.get("desktop") or {}).get("metrics") or {}
+
+        lcp_ms = (pm.get("lcp") or pd.get("lcp") or "—")
+        cls    = (pm.get("cls") or pd.get("cls") or "—")
+        inp_ms = (pm.get("inp") or pd.get("inp") or "—")
+        psi_score_mobile  = pm.get("perf_score") if pm.get("perf_score") is not None else "—"
+        psi_score_desktop = pd.get("perf_score") if pd.get("perf_score") is not None else "—"
+        # ===== UX / UI para impresión =====
+        ux = rep.get("ux") or {}
+        ax = ux.get("accessibility") or {}
+        cx = (ux.get("crux") or {}).get("p75") or {}
+        heu = ux.get("heuristics") or {}
+        recs = ux.get("recommendations") or []
+
+        viol_count = str(ax.get("violations_count") or len(ax.get("violations") or []))
+        lcp_p75 = str(cx.get("lcp_ms") or "—")
+        inp_p75 = str(cx.get("inp_ms") or "—")
+        cls_p75 = str(cx.get("cls") or "—")
+
+        heur_list_html = "<ul class='list'>" + "".join(f"<li>{esc(i)}</li>" for i in (heu.get('issues') or [])) + "</ul>"
+        recs_html = "<ol class='list'>" + "".join(f"<li>{esc(i)}</li>" for i in recs) + "</ol>"
+
    
         html_out = """<!doctype html>
 <html lang="es">
@@ -1467,6 +1704,44 @@ def print_report(rid):
       </div>
     </div>
 
+
+    <div class="section no-break">
+      <div class="title">Seguridad / Malware</div>
+      <div class="body">
+        <div class="kv"><b>Google Safe Browsing:</b> %s</div>
+        <div class="kv"><b>VirusTotal:</b> Maliciosos %s · Sospechosos %s</div>
+        <div class="kv"><b>URLHaus:</b> %s</div>
+        <div class="kv"><b>PhishTank:</b> %s</div>
+      </div>
+    </div>
+
+    <div class="section no-break">
+      <div class="title">Core Web Vitals (PageSpeed)</div>
+      <div class="body">
+        <div class="kv"><b>LCP:</b> %s ms</div>
+        <div class="kv"><b>CLS:</b> %s</div>
+        <div class="kv"><b>INP:</b> %s ms</div>
+        <div class="kv"><b>Score (mobile):</b> %s</div>
+        <div class="kv"><b>Score (desktop):</b> %s</div>
+      </div>
+    </div>
+
+    <div class="section no-break">
+      <div class="title">UX/UI y Accesibilidad</div>
+      <div class="body">
+        <div class="kv"><b>Violaciones WCAG (axe):</b> %s</div>
+        <div class="kv"><b>CrUX p75 LCP:</b> %s ms</div>
+        <div class="kv"><b>CrUX p75 INP:</b> %s ms</div>
+        <div class="kv"><b>CrUX p75 CLS:</b> %s</div>
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Heurísticas UX detectadas</h3>
+        %s
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Recomendaciones</h3>
+        %s
+      </div>
+    </div>
+
+
+
     <div class="section no-break">
       <div class="title">Acciones sugeridas</div>
       <div class="body">%s</div>
@@ -1593,9 +1868,31 @@ def print_report(rid):
             plugins_block,
             themes_block,
 
+            # Seguridad / Malware (labels y nums)
+            gsb_label,
+            vt_mal,
+            vt_susp,
+            uh_label,
+            pt_label,
+
+            # PageSpeed (CWV)
+            str(lcp_ms),
+            str(cls),
+            str(inp_ms),
+            (str(psi_score_mobile) if psi_score_mobile != "—" else "—"),
+            (str(psi_score_desktop) if psi_score_desktop != "—" else "—"),
+
+            # UX/UI y Accesibilidad
+            viol_count,
+            lcp_p75,
+            inp_p75,
+            cls_p75,
+            heur_list_html,
+            recs_html,
+
             # Acciones
             acciones_html,
-
+            
             # Anexo + footer
             html.escape(json.dumps(rep, ensure_ascii=False, indent=2)),
             esc(url)
