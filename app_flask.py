@@ -1233,7 +1233,7 @@ def print_report(rid):
       overflow-wrap: break-word;
   padding: 10px;
   }
-  .section .body{ padding:6mm 8mm max-with: 100%% !important;}
+  .section .body{ padding:6mm 8mm; max-width: 100%% !important;}
     .list li {
         max-width: 100%% !important;
     }
