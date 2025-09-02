@@ -206,7 +206,31 @@ def cookie_flag_issues(resp):
     return sorted(set(issues))
 
 def detect_mixed_content(html_text):
-    return sorted(set(re.findall(r'(?:src|href)\s*=\s*["\'](http://[^"\']+)', html_text, re.I)))[:200]
+    """
+    Detecta recursos HTTP en páginas HTTPS (contenido mixto)
+    """
+    mixed_urls = []
+    
+    # Patrones para detectar URLs HTTP
+    patterns = [
+        r'(?:src|href)\s*=\s*["\'](http://[^"\']+)',  # src="http://..." o href="http://..."
+        r'url\s*\(\s*["\']?(http://[^"\')\s]+)',      # url(http://...) en CSS
+        r'@import\s+["\'](http://[^"\']+)',           # @import "http://..." en CSS
+        r'background[^:]*:\s*url\s*\(\s*["\']?(http://[^"\')\s]+)',  # background: url(http://...)
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, html_text, re.I)
+        mixed_urls.extend(matches)
+    
+    # Limpiar y filtrar URLs
+    cleaned_urls = []
+    for url in mixed_urls:
+        url = url.strip()
+        if url and url.startswith('http://') and len(url) > 10:
+            cleaned_urls.append(url)
+    
+    return sorted(set(cleaned_urls))[:200]
 
 def tls_basic(hostname):
     out = {"ok": False}
@@ -1103,14 +1127,34 @@ def wp_heuristics(html_text):
         mv = re.search(r"wordpress\s*([\d\.]+)", mg.group(1), re.I)
         if mv:
             data["version"] = mv.group(1)
-    for m in re.finditer(r'/wp-content/themes/([a-zA-Z0-9_\-]+)/', html_text):
-        name = m.group(1)
-        if name not in data["theme_candidates"]:
-            data["theme_candidates"].append(name)
-    for m in re.finditer(r'/wp-content/plugins/([a-zA-Z0-9_\-]+)/', html_text):
-        slug = m.group(1)
-        if slug not in data["plugins"]:
-            data["plugins"][slug] = []
+    # Detectar temas - múltiples patrones
+    theme_patterns = [
+        r'/wp-content/themes/([a-zA-Z0-9_\-]+)/',
+        r'wp-content/themes/([a-zA-Z0-9_\-]+)',
+        r'theme["\']?\s*:\s*["\']([^"\']+)["\']',
+        r'get_template_directory[^"]*["\']([^"\']+)["\']',
+        r'stylesheet[^"]*["\']([^"\']+)["\']'
+    ]
+    for pattern in theme_patterns:
+        for m in re.finditer(pattern, html_text, re.I):
+            name = m.group(1).strip()
+            if name and name not in data["theme_candidates"] and len(name) > 2:
+                data["theme_candidates"].append(name)
+    
+    # Detectar plugins - múltiples patrones
+    plugin_patterns = [
+        r'/wp-content/plugins/([a-zA-Z0-9_\-]+)/',
+        r'wp-content/plugins/([a-zA-Z0-9_\-]+)',
+        r'plugin["\']?\s*:\s*["\']([^"\']+)["\']',
+        r'wp-content/plugins/([^/]+)/',
+        r'plugins/([a-zA-Z0-9_\-]+)\.js',
+        r'plugins/([a-zA-Z0-9_\-]+)\.css'
+    ]
+    for pattern in plugin_patterns:
+        for m in re.finditer(pattern, html_text, re.I):
+            slug = m.group(1).strip()
+            if slug and slug not in data["plugins"] and len(slug) > 2:
+                data["plugins"][slug] = []
     return data
 
 def wp_probes(base_url, session):
@@ -1938,11 +1982,13 @@ def print_report(rid):
 
 
         if mixed:
-            rows = "".join("<tr><td>%s</td></tr>" % esc(u) for u in mixed[:20])
-            more = "<tr><td>… y %d más</td></tr>" % (len(mixed)-20) if len(mixed) > 20 else ""
-            mixed_html = "<div class='muted'>⚠ Recursos http referenciados en https:</div><table class='table'><tbody>%s%s</tbody></table>" % (rows, more)
+            mixed_items = []
+            for url in mixed[:20]:  # Mostrar hasta 20 URLs
+                mixed_items.append(f"<li><b>{esc(url)}</b></li>")
+            more_text = f"<li><i>… y {len(mixed)-20} URLs más</i></li>" if len(mixed) > 20 else ""
+            mixed_html = f"<div class='muted'>⚠ <b>{len(mixed)} recursos HTTP</b> referenciados en página HTTPS:</div><ul class='list'>{''.join(mixed_items)}{more_text}</ul>"
         else:
-            mixed_html = "<span class='ok'>✔ Sin contenido mixto</span>"
+            mixed_html = "<span class='ok'>✔ Sin contenido mixto detectado</span>"
 
         headers_html = "<span class='ok'>✔ Sin ausencias críticas</span>" if not headers_missing else "<ul class='list'>%s</ul>" % li(headers_missing)
         cookies_html = "<span class='ok'>✔ Cookies OK</span>" if not cookies_issues else "<ul class='list'>%s</ul>" % li(cookies_issues)
@@ -1954,8 +2000,21 @@ def print_report(rid):
         themes_str = ", ".join(theme_candidates) if theme_candidates else "—"
         
         # HTML para plugins y temas
-        plugins_list_html = "<span class='ok'>✔ Sin plugins detectados</span>" if not plugins_list else "<ul class='list'>" + "".join(f"<li>{esc(plugin)}</li>" for plugin in plugins_list) + "</ul>"
-        themes_list_html = "<span class='ok'>✔ Sin temas detectados</span>" if not theme_candidates else "<ul class='list'>" + "".join(f"<li>{esc(theme)}</li>" for theme in theme_candidates) + "</ul>"
+        if not plugins_list:
+            plugins_list_html = "<span class='ok'>✔ Sin plugins detectados</span>"
+        else:
+            plugins_items = []
+            for plugin in plugins_list:
+                plugins_items.append(f"<li><b>{esc(plugin)}</b></li>")
+            plugins_list_html = f"<ul class='list'>{''.join(plugins_items)}</ul>"
+        
+        if not theme_candidates:
+            themes_list_html = "<span class='ok'>✔ Sin temas detectados</span>"
+        else:
+            themes_items = []
+            for theme in theme_candidates:
+                themes_items.append(f"<li><b>{esc(theme)}</b></li>")
+            themes_list_html = f"<ul class='list'>{''.join(themes_items)}</ul>"
 
         def yn(val, ok="Sí", no="No", dash="—"):
             return ok if val is True else (no if val is False else dash)
@@ -2771,12 +2830,14 @@ def print_report(rid):
       <div class="subsection">
         <div class="subsection-title">WordPress</div>
         <div class="body">
-          <div class="kv"><b>Versión:</b> %s</div>
-          <div class="kv"><b>Última versión:</b> %s</div>
-          <div class="kv"><b>Desactualizado:</b> %s</div>
-          <div class="kv"><b>Plugins detectados:</b></div>
+          <div class="kv"><b>Versión actual:</b> %s</div>
+          <div class="kv"><b>Última versión disponible:</b> %s</div>
+          <div class="kv"><b>Core desactualizado:</b> %s</div>
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎨 Tema(s) detectado(s)</h3>
           %s
-          <div class="kv"><b>Temas detectados:</b></div>
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔌 Plugin(s) detectado(s)</h3>
           %s
         </div>
       </div>
