@@ -369,6 +369,15 @@ def gsb_check(url):
     Google Safe Browsing v4: amenaza si hay matches.
     """
     api_key = os.getenv("GSB_API_KEY")
+    
+    if not api_key:
+        return {
+            "enabled": False, 
+            "unsafe": None, 
+            "error": "API key no configurada", 
+            "raw": None,
+            "details": "Google Safe Browsing API key no está configurada en las variables de entorno"
+        }
   
     body = {
         "client": {"clientId": "idei-auditor", "clientVersion": "1.0"},
@@ -387,44 +396,134 @@ def gsb_check(url):
             f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={api_key}",
             json=body, headers=UA, timeout=REQ_TIMEOUT
         )
+        
         data = r.json() if r.ok else {}
-        return {"enabled": True, "unsafe": bool(data.get("matches")), "raw": data}
+        matches = data.get("matches", [])
+        
+        # Análisis detallado de matches
+        threat_details = []
+        for match in matches:
+            threat_type = match.get("threatType", "UNKNOWN")
+            platform_type = match.get("platformType", "UNKNOWN")
+            threat_entry_type = match.get("threatEntryType", "UNKNOWN")
+            threat = match.get("threat", {})
+            cache_duration = match.get("cacheDuration", "N/A")
+            
+            threat_details.append({
+                "threat_type": threat_type,
+                "platform_type": platform_type,
+                "threat_entry_type": threat_entry_type,
+                "url": threat.get("url", url),
+                "cache_duration": cache_duration
+            })
+        
+        return {
+            "enabled": True, 
+            "unsafe": bool(matches), 
+            "matches_count": len(matches),
+            "threat_details": threat_details,
+            "raw": data,
+            "api_status": r.status_code,
+            "api_response_time": r.elapsed.total_seconds() if hasattr(r, 'elapsed') else None
+        }
     except Exception as e:
-        return {"enabled": True, "unsafe": None, "error": str(e), "raw": None}
+        return {
+            "enabled": True, 
+            "unsafe": None, 
+            "error": str(e), 
+            "raw": None,
+            "details": f"Error al consultar Google Safe Browsing: {str(e)}"
+        }
 
 
 def vt_check(url):
     """
     VirusTotal URL analysis (v3). Gratis ~4/min, 500/día.
-    Resultado sintético: conteo de 'malicious' y 'suspicious'.
+    Resultado detallado con toda la información posible.
     """
     api_key = os.getenv("VT_API_KEY")
     if not api_key:
-        return {"enabled": False, "malicious": None, "suspicious": None, "raw": None}
+        return {
+            "enabled": False, 
+            "malicious": None, 
+            "suspicious": None, 
+            "raw": None,
+            "details": "VirusTotal API key no está configurada en las variables de entorno"
+        }
+    
     headers = {"x-apikey": api_key, **UA}
     try:
         # 1) enviar análisis (cola)
         post = requests.post("https://www.virustotal.com/api/v3/urls",
                              data={"url": url}, headers=headers, timeout=REQ_TIMEOUT)
         post.raise_for_status()
-        analysis_id = (post.json().get("data") or {}).get("id")
+        post_data = post.json()
+        analysis_id = (post_data.get("data") or {}).get("id")
+        
         # 2) leer resultado del análisis
         if not analysis_id:
-            return {"enabled": True, "malicious": None, "suspicious": None, "raw": post.json()}
+            return {
+                "enabled": True, 
+                "malicious": None, 
+                "suspicious": None, 
+                "raw": post_data,
+                "details": "No se pudo obtener ID de análisis de VirusTotal"
+            }
+        
         res = requests.get(
             f"https://www.virustotal.com/api/v3/analyses/{analysis_id}",
             headers=headers, timeout=REQ_TIMEOUT
         )
         js = res.json() if res.ok else {}
-        stats = (((js.get("data") or {}).get("attributes") or {}).get("stats") or {})
-        return {
-            "enabled": True,
+        
+        # Análisis detallado
+        data = js.get("data", {})
+        attributes = data.get("attributes", {})
+        stats = attributes.get("stats", {})
+        results = attributes.get("results", {})
+        
+        # Contar detecciones por engine
+        engine_detections = []
+        for engine, result in results.items():
+            if result and result.get("category") in ["malicious", "suspicious"]:
+                engine_detections.append({
+                    "engine": engine,
+                    "category": result.get("category"),
+                    "method": result.get("method"),
+                    "result": result.get("result")
+                })
+        
+        # Estadísticas detalladas
+        detailed_stats = {
             "malicious": int(stats.get("malicious", 0)),
             "suspicious": int(stats.get("suspicious", 0)),
-            "raw": js
+            "harmless": int(stats.get("harmless", 0)),
+            "undetected": int(stats.get("undetected", 0)),
+            "timeout": int(stats.get("timeout", 0)),
+            "total_engines": len(results)
+        }
+        
+        return {
+            "enabled": True,
+            "malicious": detailed_stats["malicious"],
+            "suspicious": detailed_stats["suspicious"],
+            "detailed_stats": detailed_stats,
+            "engine_detections": engine_detections,
+            "analysis_id": analysis_id,
+            "scan_date": attributes.get("date"),
+            "raw": js,
+            "api_status": res.status_code,
+            "api_response_time": res.elapsed.total_seconds() if hasattr(res, 'elapsed') else None
         }
     except Exception as e:
-        return {"enabled": True, "malicious": None, "suspicious": None, "error": str(e), "raw": None}
+        return {
+            "enabled": True, 
+            "malicious": None, 
+            "suspicious": None, 
+            "error": str(e), 
+            "raw": None,
+            "details": f"Error al consultar VirusTotal: {str(e)}"
+        }
 
 
 def urlhaus_check(url):
@@ -436,9 +535,38 @@ def urlhaus_check(url):
         r = requests.get(f"https://urlhaus.abuse.ch/api/host/{host}/",
                          headers=UA, timeout=REQ_TIMEOUT)
         js = r.json() if r.ok else {}
-        return {"listed": bool(js.get("urls")), "raw": js}
-    except Exception:
-        return {"listed": None, "raw": None}
+        
+        urls = js.get("urls", [])
+        listed = bool(urls)
+        
+        # Análisis detallado de URLs maliciosas
+        malicious_urls = []
+        for url_data in urls[:20]:  # Limitar a 20 para el reporte
+            malicious_urls.append({
+                "url": url_data.get("url", ""),
+                "date_added": url_data.get("date_added", ""),
+                "threat": url_data.get("threat", ""),
+                "tags": url_data.get("tags", []),
+                "url_status": url_data.get("url_status", ""),
+                "id": url_data.get("id", "")
+            })
+        
+        return {
+            "listed": listed,
+            "urls_count": len(urls),
+            "malicious_urls": malicious_urls,
+            "host": host,
+            "raw": js,
+            "api_status": r.status_code,
+            "api_response_time": r.elapsed.total_seconds() if hasattr(r, 'elapsed') else None
+        }
+    except Exception as e:
+        return {
+            "listed": None, 
+            "raw": None,
+            "error": str(e),
+            "details": f"Error al consultar URLHaus: {str(e)}"
+        }
 
 
 def phishtank_check(url):
@@ -447,9 +575,54 @@ def phishtank_check(url):
     """
     try:
         host = urlparse(url).hostname or ""
-        return {"host": host, "listed": None}
-    except Exception:
-        return {"host": None, "listed": None}
+        
+        # Intentar consultar el feed público de PhishTank
+        try:
+            r = requests.get("https://www.phishtank.com/phish_archive.php?format=json",
+                           headers=UA, timeout=REQ_TIMEOUT)
+            if r.ok:
+                data = r.json()
+                phish_data = data.get("phishtank", {}).get("entries", [])
+                
+                # Buscar si la URL está en la lista
+                is_phish = False
+                phish_details = None
+                for entry in phish_data:
+                    if entry.get("url") == url or host in entry.get("url", ""):
+                        is_phish = True
+                        phish_details = {
+                            "url": entry.get("url", ""),
+                            "phish_id": entry.get("phish_id", ""),
+                            "verified": entry.get("verified", ""),
+                            "online": entry.get("online", ""),
+                            "submission_time": entry.get("submission_time", "")
+                        }
+                        break
+                
+                return {
+                    "host": host,
+                    "listed": is_phish,
+                    "phish_details": phish_details,
+                    "feed_available": True,
+                    "total_entries": len(phish_data),
+                    "api_status": r.status_code
+                }
+        except Exception:
+            pass
+        
+        return {
+            "host": host, 
+            "listed": None,
+            "details": "PhishTank feed no disponible o error de conexión",
+            "feed_available": False
+        }
+    except Exception as e:
+        return {
+            "host": None, 
+            "listed": None,
+            "error": str(e),
+            "details": f"Error al consultar PhishTank: {str(e)}"
+        }
 
 
 # ============== PageSpeed / Core Web Vitals ==============
@@ -1798,11 +1971,92 @@ def print_report(rid):
         _uh  = (sec_rep.get("urlhaus") or {})
         _pt  = (sec_rep.get("phishtank") or {})
 
-        gsb_label = ("Inseguro" if _gsb.get("unsafe") is True else ("Seguro" if _gsb.get("unsafe") is False else ("—" if _gsb.get("enabled") else "No config")))
-        vt_mal = str(_vt.get("malicious") if _vt.get("malicious") is not None else "—")
-        vt_susp = str(_vt.get("suspicious") if _vt.get("suspicious") is not None else "—")
-        uh_label = ("Listado" if _uh.get("listed") is True else ("No" if _uh.get("listed") is False else "—"))
-        pt_label = ("Sí" if _pt.get("listed") is True else ("No" if _pt.get("listed") is False else "—"))
+        # Google Safe Browsing - Detallado
+        gsb_enabled = _gsb.get("enabled", False)
+        gsb_unsafe = _gsb.get("unsafe")
+        gsb_matches = _gsb.get("matches_count", 0)
+        gsb_details = _gsb.get("threat_details", [])
+        
+        if not gsb_enabled:
+            gsb_label = "No configurado"
+            gsb_details_html = f"<div class='muted'>API key no configurada: {_gsb.get('details', 'N/A')}</div>"
+        elif gsb_unsafe is True:
+            gsb_label = f"⚠️ INSEGURO ({gsb_matches} amenazas)"
+            gsb_details_html = "<ul class='list'>"
+            for threat in gsb_details[:10]:
+                gsb_details_html += f"<li><b>{esc(threat.get('threat_type', 'N/A'))}</b> - {esc(threat.get('platform_type', 'N/A'))}</li>"
+            gsb_details_html += "</ul>"
+            if len(gsb_details) > 10:
+                gsb_details_html += f"<div class='muted'>... y {len(gsb_details) - 10} más</div>"
+        elif gsb_unsafe is False:
+            gsb_label = "✅ Seguro"
+            gsb_details_html = "<span class='ok'>No se detectaron amenazas</span>"
+        else:
+            gsb_label = "❓ Error"
+            gsb_details_html = f"<div class='muted'>Error: {_gsb.get('error', 'N/A')}</div>"
+
+        # VirusTotal - Detallado
+        vt_enabled = _vt.get("enabled", False)
+        vt_mal = _vt.get("malicious", 0)
+        vt_susp = _vt.get("suspicious", 0)
+        vt_detailed = _vt.get("detailed_stats", {})
+        vt_engines = _vt.get("engine_detections", [])
+        
+        if not vt_enabled:
+            vt_label = "No configurado"
+            vt_details_html = f"<div class='muted'>API key no configurada: {_vt.get('details', 'N/A')}</div>"
+        else:
+            vt_label = f"Maliciosos: {vt_mal} · Sospechosos: {vt_susp}"
+            vt_details_html = f"""
+            <div class='kv'><b>Total engines:</b> {vt_detailed.get('total_engines', 'N/A')}</div>
+            <div class='kv'><b>Harmless:</b> {vt_detailed.get('harmless', 'N/A')}</div>
+            <div class='kv'><b>Undetected:</b> {vt_detailed.get('undetected', 'N/A')}</div>
+            <div class='kv'><b>Timeout:</b> {vt_detailed.get('timeout', 'N/A')}</div>
+            """
+            if vt_engines:
+                vt_details_html += "<h4>Detecciones por Engine:</h4><ul class='list'>"
+                for engine in vt_engines[:15]:
+                    vt_details_html += f"<li><b>{esc(engine.get('engine', 'N/A'))}</b> - {esc(engine.get('category', 'N/A'))} - {esc(engine.get('result', 'N/A'))}</li>"
+                vt_details_html += "</ul>"
+                if len(vt_engines) > 15:
+                    vt_details_html += f"<div class='muted'>... y {len(vt_engines) - 15} más</div>"
+
+        # URLHaus - Detallado
+        uh_listed = _uh.get("listed")
+        uh_count = _uh.get("urls_count", 0)
+        uh_urls = _uh.get("malicious_urls", [])
+        
+        if uh_listed is True:
+            uh_label = f"⚠️ LISTADO ({uh_count} URLs)"
+            uh_details_html = "<ul class='list'>"
+            for url_data in uh_urls[:10]:
+                uh_details_html += f"<li><b>{esc(url_data.get('threat', 'N/A'))}</b> - {esc(url_data.get('url', 'N/A'))}</li>"
+            uh_details_html += "</ul>"
+            if len(uh_urls) > 10:
+                uh_details_html += f"<div class='muted'>... y {len(uh_urls) - 10} más</div>"
+        elif uh_listed is False:
+            uh_label = "✅ No listado"
+            uh_details_html = "<span class='ok'>No se encontraron URLs maliciosas</span>"
+        else:
+            uh_label = "❓ Error"
+            uh_details_html = f"<div class='muted'>Error: {_uh.get('error', 'N/A')}</div>"
+
+        # PhishTank - Detallado
+        pt_listed = _pt.get("listed")
+        pt_feed = _pt.get("feed_available", False)
+        pt_total = _pt.get("total_entries", 0)
+        pt_details = _pt.get("phish_details")
+        
+        if pt_listed is True:
+            pt_label = "⚠️ PHISHING DETECTADO"
+            pt_details_html = f"<div class='kv'><b>Phish ID:</b> {esc(pt_details.get('phish_id', 'N/A') if pt_details else 'N/A')}</div>"
+            pt_details_html += f"<div class='kv'><b>Verificado:</b> {esc(pt_details.get('verified', 'N/A') if pt_details else 'N/A')}</div>"
+        elif pt_listed is False:
+            pt_label = "✅ No es phishing"
+            pt_details_html = f"<div class='muted'>Feed disponible: {pt_total} entradas verificadas</div>"
+        else:
+            pt_label = "❓ No disponible"
+            pt_details_html = f"<div class='muted'>Feed no disponible: {_pt.get('details', 'N/A')}</div>"
 
         # ===== Resumen PageSpeed (CWV) =====
         psi = rep.get("pagespeed") or {}
@@ -1831,18 +2085,61 @@ def print_report(rid):
 
        # ===== Malware: variables para impresión =====
         mal = rep.get("malware_scan") or {}
-        infected_label = "Sí" if mal.get("infected") else ("No" if mal.get("infected") is False else "—")
+        infected = mal.get("infected", False)
+        severity = mal.get("severity", "unknown")
+        counts = (mal.get("summary") or {}).get("counts", {})
+        
+        # Label de infección más detallado
+        if infected:
+            infected_label = f"⚠️ SÍ ({severity.upper()})"
+        elif infected is False:
+            infected_label = "✅ No"
+        else:
+            infected_label = "❓ Desconocido"
 
+        # URLs sospechosas con más detalles
         sus_urls = (mal.get("summary") or {}).get("suspected_urls") or []
         urls_html = "<ul class='list'>" + "".join(f"<li>{esc(u)}</li>" for u in sus_urls[:20]) + \
                     ("<li>…</li>" if len(sus_urls) > 20 else "") + "</ul>"
 
+        # Evidencias más detalladas
         snips = []
-        for e in (mal.get("urls") or [])[:10]:
-            if e.get("snippets"):
-                for s in e["snippets"][:2]:
-                    snips.append(f"<div><b>{esc(e.get('url',''))}</b><pre>{esc(s[:1200])}</pre></div>")
-        evid_html = "".join(snips) or "<span class='ok'>✔ Sin evidencias capturadas</span>"
+        malware_urls = mal.get("urls", [])
+        
+        for e in malware_urls[:15]:  # Más URLs
+            url = e.get('url', '')
+            findings_dom = e.get('findings_dom', [])
+            findings_raw = e.get('findings_raw', [])
+            external_scripts = e.get('external_scripts', [])
+            snippets = e.get('snippets', [])
+            
+            # Agregar información de findings
+            if findings_dom or findings_raw:
+                findings_text = f"<div class='kv'><b>Findings DOM:</b> {', '.join(findings_dom[:5])}</div>"
+                findings_text += f"<div class='kv'><b>Findings RAW:</b> {', '.join(findings_raw[:5])}</div>"
+                if external_scripts:
+                    findings_text += f"<div class='kv'><b>Scripts externos:</b> {len(external_scripts)} detectados</div>"
+                snips.append(f"<div class='malware-entry'><b>{esc(url)}</b>{findings_text}</div>")
+            
+            # Agregar snippets
+            for s in snippets[:3]:  # Más snippets por URL
+                snips.append(f"<div class='snippet-entry'><b>{esc(url)}</b><pre class='code-snippet'>{esc(s[:800])}</pre></div>")
+        
+        # Estadísticas de malware
+        stats_html = f"""
+        <div class='malware-stats'>
+            <div class='kv'><b>URLs analizadas:</b> {len(malware_urls)}</div>
+            <div class='kv'><b>URLs con findings DOM:</b> {counts.get('dom_hits', 0)}</div>
+            <div class='kv'><b>URLs con findings RAW:</b> {counts.get('raw_hits', 0)}</div>
+            <div class='kv'><b>Scripts externos sospechosos:</b> {counts.get('externals', 0)}</div>
+            <div class='kv'><b>Elementos ocultos:</b> {counts.get('hidden', 0)}</div>
+            <div class='kv'><b>Keywords maliciosas:</b> {counts.get('keywords', 0)}</div>
+            <div class='kv'><b>Alta entropía:</b> {counts.get('entropy', 0)}</div>
+            <div class='kv'><b>Meta refresh:</b> {counts.get('meta', 0)}</div>
+        </div>
+        """
+        
+        evid_html = stats_html + ("".join(snips) if snips else "<span class='ok'>✔ Sin evidencias capturadas</span>")
 
         # ===== Alerta crítica (roja) cuando hay infección o reputación mala =====
         sec_rep = rep.get("security_reputation") or {}
@@ -1978,6 +2275,73 @@ def print_report(rid):
   font-weight: 700;
     }
     .alert-title{ font-size: 15px; margin-bottom: 2mm }
+    
+    /* Estilos adicionales para malware y evidencias */
+    .malware-entry {
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      padding: 8px 12px;
+      margin: 4px 0;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    
+    .snippet-entry {
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+      padding: 8px 12px;
+      margin: 4px 0;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    
+    .code-snippet {
+      background: #1f2937;
+      color: #f9fafb;
+      padding: 8px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      line-height: 1.4;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    
+    .malware-stats {
+      background: #ecfdf5;
+      border: 1px solid #10b981;
+      padding: 12px;
+      border-radius: 8px;
+      margin: 8px 0;
+    }
+    
+    .api-details {
+      background: #f0f9ff;
+      border: 1px solid #0ea5e9;
+      padding: 10px;
+      border-radius: 6px;
+      margin: 4px 0;
+      font-size: 12px;
+    }
+    
+    .threat-detail {
+      background: #fef2f2;
+      border: 1px solid #ef4444;
+      padding: 6px 10px;
+      border-radius: 4px;
+      margin: 2px 0;
+      font-size: 12px;
+    }
+    
+    .engine-detection {
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin: 2px 0;
+      font-size: 11px;
+    }
 
 </style>
 </head>
@@ -2206,12 +2570,27 @@ def print_report(rid):
 
 
     <div class="section no-break">
-      <div class="title">Seguridad / Malware</div>
+      <div class="title">Seguridad / Malware - Análisis Detallado</div>
       <div class="body">
-        <div class="kv"><b>Google Safe Browsing:</b> %s</div>
-        <div class="kv"><b>VirusTotal:</b> Maliciosos %s · Sospechosos %s</div>
-        <div class="kv"><b>URLHaus:</b> %s</div>
-        <div class="kv"><b>PhishTank:</b> %s</div>
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔍 Google Safe Browsing</h3>
+        <div class="kv"><b>Estado:</b> %s</div>
+        <div class="kv"><b>Detalles:</b></div>
+        %s
+        
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">🛡️ VirusTotal</h3>
+        <div class="kv"><b>Estado:</b> %s</div>
+        <div class="kv"><b>Detalles:</b></div>
+        %s
+        
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">🚨 URLHaus</h3>
+        <div class="kv"><b>Estado:</b> %s</div>
+        <div class="kv"><b>Detalles:</b></div>
+        %s
+        
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎣 PhishTank</h3>
+        <div class="kv"><b>Estado:</b> %s</div>
+        <div class="kv"><b>Detalles:</b></div>
+        %s
       </div>
     </div>
 
@@ -2389,10 +2768,13 @@ alert_html,
 
             # Seguridad / Malware (labels y nums)
             gsb_label,
-            vt_mal,
-            vt_susp,
+            gsb_details_html,
+            vt_label,
+            vt_details_html,
             uh_label,
+            uh_details_html,
             pt_label,
+            pt_details_html,
 
             # PageSpeed (CWV)
             str(lcp_ms),
