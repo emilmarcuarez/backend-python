@@ -1275,7 +1275,7 @@ def print_report(rid):
     try:
         row = db.query(Report, Site).join(Site, Report.site_id==Site.id).filter(Report.id==rid).one_or_none()
         if not row:
-            return jsonify({"detail":"Reporte no encontrado"}), 404
+            return jsonify({"detail":"Reporte no encontradoo"}), 404
 
         rep_obj, site = row
         rep = json.loads(rep_obj.report_json or "{}")
