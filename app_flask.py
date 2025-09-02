@@ -2306,14 +2306,14 @@ def print_report(rid):
         
         # Enlaces
         links_analysis = ux_analysis.get("links_analysis", [])
-        links_html = "<span class='ok'>✔ Sin problemas en enlaces</span>"
+        ux_links_html = "<span class='ok'>✔ Sin problemas en enlaces</span>"
         if links_analysis:
             link_items = []
             for link in links_analysis:
                 link_items.append(f"<li><b>{esc(link.get('url', ''))}</b> - {esc(link.get('text', ''))}</li>")
                 for issue in link.get("issues", []):
                     link_items.append(f"<li class='context-item'>{esc(issue)}</li>")
-            links_html = f"<ul class='list'>{''.join(link_items)}</ul>"
+            ux_links_html = f"<ul class='list'>{''.join(link_items)}</ul>"
         
         # Media
         media_issues = ux_analysis.get("media_issues", [])
@@ -3214,7 +3214,7 @@ alert_html,
             missing_alt_html,
             forms_html,
             buttons_html,
-            links_html,
+            ux_links_html,
             media_html,
             accessibility_html,
             performance_html,
