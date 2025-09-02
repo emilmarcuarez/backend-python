@@ -90,23 +90,24 @@ SECURITY_HEADERS = [
 ]
 
 
-CONNECT_TIMEOUT = 3
-READ_TIMEOUT = 6
+# Timeouts más conservadores (reduce bloqueos en plataformas PaaS)
+CONNECT_TIMEOUT = 2
+READ_TIMEOUT = 5
 REQ_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
 
 def make_session():
     s = requests.Session()
     retries = Retry(
-        total=2,              
+        total=1,              
         connect=1,
         read=1,
-        backoff_factor=0.5,    
+        backoff_factor=0.3,    
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=frozenset(["GET", "POST"])
     )
     adapter = HTTPAdapter(
-        pool_connections=10,  
-        pool_maxsize=10,      
+        pool_connections=6,  
+        pool_maxsize=6,      
         max_retries=retries
     )
     s.mount("http://", adapter)
@@ -749,18 +750,39 @@ def enrich_with_wpscan(html_text, wp_block):
 
 # ------------------ ANALYZE ------------------
 def check_exposed_backups(url, session):
-    # Busca archivos de backup comunes expuestos en la raíz
+    """
+    Escaneo ligero de posibles backups expuestos.
+    Optimizaciones:
+      - HEAD primero (barato). Si 200 y Content-Length grande, confirmar con GET ligero con stream y early close.
+      - Lista reducida de rutas comunes.
+      - Límite de 4 segundos de presupuesto local.
+      - Max 3 hallazgos para cortar temprano.
+    """
+    start = time.perf_counter()
+    budget_seconds = 4.0
     exposed = []
     backup_files = [
-        "/backup.zip", "/backup.tar.gz", "/backup.sql", "/db.sql", "/website.zip",
-        "/site-backup.zip", "/backup.tar", "/backup.gz", "/backup.bak", "/backup.rar",
-        "/db_backup.sql", "/database.sql", "/backup.old", "/backup.copy", "/backup.7z"
+        "/backup.zip", "/backup.sql", "/db.sql", "/website.zip", "/db_backup.sql",
+        "/database.sql", "/backup.tar.gz"
     ]
     for path in backup_files:
+        if (time.perf_counter() - start) > budget_seconds:
+            break
+        if len(exposed) >= 3:
+            break
         try:
-            r = session.get(urljoin(url, path), headers=UA, timeout=8, allow_redirects=True)
-            if r.status_code == 200 and int(r.headers.get("Content-Length", "0")) > 10000:
-                exposed.append(path)
+            head = session.head(urljoin(url, path), headers=UA, timeout=REQ_TIMEOUT, allow_redirects=True)
+            if head.status_code == 200:
+                size = int(head.headers.get("Content-Length", "0") or 0)
+                if size and size > 1000000:  # >1MB sospechoso
+                    # confirmar con GET stream y cerrar pronto
+                    try:
+                        g = session.get(urljoin(url, path), headers=UA, timeout=REQ_TIMEOUT, stream=True)
+                        g.close()
+                        if g.status_code == 200:
+                            exposed.append(path)
+                    except Exception:
+                        pass
         except Exception:
             pass
     return exposed
@@ -863,6 +885,8 @@ def seo_structure_from_html(html_text: str) -> dict:
 
 
 def analyze(url):
+    overall_start = time.perf_counter()
+    overall_budget = float(os.getenv("ANALYZE_BUDGET_SECONDS", "45"))  # Presupuesto total (s)
     url = norm_url(url.strip())
     session = make_session()
     
@@ -921,7 +945,11 @@ def analyze(url):
     }
 
 
-    r = session.get(url, headers=UA, timeout=12, allow_redirects=True)
+    # Corte temprano si ya no hay presupuesto
+    if (time.perf_counter() - overall_start) > overall_budget:
+        return {"url": url, "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"), "error": "Tiempo agotado al iniciar", "wp": {"is_wordpress": False}, "is_wordpress": False, "score": 0, "grade": "F", "risk_level": "Critical"}
+
+    r = session.get(url, headers=UA, timeout=REQ_TIMEOUT, allow_redirects=True)
     
     # Seguridad / malware (reputación externa)
     report["security_reputation"] = {
@@ -973,15 +1001,31 @@ def analyze(url):
     report["waf_cdn"] = detect_waf_cdn(r.headers)
     if host:
         report["host"] = host_info(host)
-    report["exposed"] = check_exposed(url, session)
-    report["wp_users"] = wp_enumerate_users(url, session)
-    report["rest"] = rest_details(url, session)
+    # Bloques con checks de presupuesto
+    if (time.perf_counter() - overall_start) < (overall_budget - 5):
+        report["exposed"] = check_exposed(url, session)
+    else:
+        report["exposed"] = {}
+
+    if (time.perf_counter() - overall_start) < (overall_budget - 5):
+        report["wp_users"] = wp_enumerate_users(url, session)
+    else:
+        report["wp_users"] = {"authors": []}
+
+    if (time.perf_counter() - overall_start) < (overall_budget - 5):
+        report["rest"] = rest_details(url, session)
+    else:
+        report["rest"] = {}
+
     report["performance"] = performance_check(r.url, session)
     
     # PageSpeed (core web vitals)
-    psi_m = pagespeed_fetch(r.url, "mobile")
-    psi_d = pagespeed_fetch(r.url, "desktop")
-    report["pagespeed"] = {"mobile": psi_m, "desktop": psi_d}
+    if (time.perf_counter() - overall_start) < (overall_budget - 15):
+        psi_m = pagespeed_fetch(r.url, "mobile")
+        psi_d = pagespeed_fetch(r.url, "desktop")
+        report["pagespeed"] = {"mobile": psi_m, "desktop": psi_d}
+    else:
+        report["pagespeed"] = {"mobile": {"error": "budget"}, "desktop": {"error": "budget"}}
 
     # mete C WV resumidas en performance para que tu UI/impresión lo tenga fácil
     pm = (psi_m.get("metrics") or {})
@@ -994,10 +1038,12 @@ def analyze(url):
 
     report["ux"] = {}
 
-    try:
-        axe = axe_scan(r.url)
-    except Exception as _e:
-        axe = {"enabled": True, "violations": [], "error": str(_e)}
+    axe = {"enabled": False, "violations": []}
+    if (time.perf_counter() - overall_start) < (overall_budget - 20):
+        try:
+            axe = axe_scan(r.url)
+        except Exception as _e:
+            axe = {"enabled": True, "violations": [], "error": str(_e)}
     report["ux"]["accessibility"] = {
         "violations_count": len(axe.get("violations") or []),
         "violations": axe.get("violations") or [],
@@ -1006,10 +1052,12 @@ def analyze(url):
     }
 
 
-    try:
-        crux = crux_site(r.url)
-    except Exception as _e:
-        crux = {"enabled": False, "error": str(_e)}
+    crux = {"enabled": False}
+    if (time.perf_counter() - overall_start) < (overall_budget - 10):
+        try:
+            crux = crux_site(r.url)
+        except Exception as _e:
+            crux = {"enabled": False, "error": str(_e)}
     report["ux"]["crux"] = crux  
     try:
         heu = heuristics_ux(r.text, r.url)
@@ -1050,15 +1098,17 @@ def analyze(url):
     report["seo_structure"] = seo_structure_from_html(r.text)
     
     report["jquery_version"] = detect_jquery_version(r.text)
-    report["acf_rest"] = check_acf_rest(url, session)
-    report["wc_rest_exposed"] = check_wc_rest(url, session)
-    report["graphql_endpoint"] = check_graphql(url, session)
-    report["jwt_endpoint"] = check_jwt_endpoint(url, session)
-    report["wp_cron_accessible"] = check_wp_cron(url, session)
-    report["oembed_enabled"] = check_oembed(url, session)
-    report["exposed_backups"] = check_exposed_backups(url, session)
-    report["open_directories"] = check_directory_listing(url, session)
-    report["admin_ajax_open"] = check_admin_ajax(url, session)
+    # Checks de integraciones sujetos a presupuesto
+    maybe = lambda margin: (time.perf_counter() - overall_start) < (overall_budget - margin)
+    report["acf_rest"] = check_acf_rest(url, session) if maybe(5) else None
+    report["wc_rest_exposed"] = check_wc_rest(url, session) if maybe(5) else None
+    report["graphql_endpoint"] = check_graphql(url, session) if maybe(5) else None
+    report["jwt_endpoint"] = check_jwt_endpoint(url, session) if maybe(5) else None
+    report["wp_cron_accessible"] = check_wp_cron(url, session) if maybe(5) else None
+    report["oembed_enabled"] = check_oembed(url, session) if maybe(5) else None
+    report["exposed_backups"] = check_exposed_backups(url, session) if maybe(5) else []
+    report["open_directories"] = check_directory_listing(url, session) if maybe(5) else []
+    report["admin_ajax_open"] = check_admin_ajax(url, session) if maybe(5) else None
 
 
     if WPSCAN_API_TOKEN:
