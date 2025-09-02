@@ -631,15 +631,13 @@ def phishtank_check(url):
                     "total_entries": len(phish_data),
                     "api_status": r.status_code
                 }
-    except Exception:
-            pass
-        
-        return {
-            "host": host, 
-            "listed": None,
-            "details": "PhishTank feed no disponible o error de conexión",
-            "feed_available": False
-        }
+        except Exception as e:
+            return {
+                "host": None,
+                "listed": None,
+                "error": str(e),
+                "details": f"Error al consultar PhishTank: {str(e)}"
+            }
     except Exception as e:
         return {
             "host": None, 
