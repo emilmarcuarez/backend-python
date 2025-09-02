@@ -1712,7 +1712,7 @@ def print_report(rid):
     <div class="title" style="%s">Detección de Malware (crawling + DOM)</div>
     <div class="body">
         <div class="kv"><b>Infección detectada:</b> %s</div>
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">URLs sospechosas</h3>
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">URLss sospechosas</h3>
         %s
         <h3 style="margin:6mm 0 2mm 0;font-size:14px">Evidencias (snippets)</h3>
         %s
