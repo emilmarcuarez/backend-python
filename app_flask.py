@@ -1189,7 +1189,9 @@ def print_report(rid):
   .page{ page-break-after:always; }
   .no-break{ page-break-inside:avoid }
   .hrow{ height:8mm }
-
+    img{
+        width:250px;
+    }
   /* Portada */
   .cover{ background:var(--paper); border:1px solid var(--line); margin:15mm auto; padding:22mm 18mm; }
   .cover .kicker{ color:#1f2937; font-weight:700; letter-spacing:.08em; text-transform:uppercase; font-size:12px }
