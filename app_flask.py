@@ -480,6 +480,77 @@ def privacy_scan(html_text):
         pass
     return out
 
+def content_security_scan(html_text):
+    """
+    Análisis de contenido para detectar patrones sospechosos como casinos, juegos, spam, etc.
+    """
+    suspicious_patterns = {
+        "casino_keywords": [
+            "casino", "juego", "apuesta", "poker", "ruleta", "tragamonedas", "bingo", 
+            "lotería", "azar", "ganar dinero", "bonus", "jackpot", "bet", "gambling"
+        ],
+        "spam_keywords": [
+            "viagra", "cialis", "pharmacy", "pills", "weight loss", "diet", "loan", 
+            "credit", "debt", "mortgage", "insurance", "investment", "forex", "bitcoin"
+        ],
+        "malicious_patterns": [
+            "click here", "free money", "win now", "guaranteed", "no risk", 
+            "limited time", "act now", "urgent", "secret", "hidden"
+        ],
+        "suspicious_domains": [
+            "bit.ly", "tinyurl", "goo.gl", "t.co", "short.link", "redirect"
+        ]
+    }
+    
+    text_lower = html_text.lower()
+    findings = {
+        "casino_content": [],
+        "spam_content": [],
+        "malicious_content": [],
+        "suspicious_links": [],
+        "risk_score": 0
+    }
+    
+    # Detectar contenido de casino/juegos
+    for keyword in suspicious_patterns["casino_keywords"]:
+        if keyword in text_lower:
+            count = text_lower.count(keyword)
+            findings["casino_content"].append({"keyword": keyword, "count": count})
+            findings["risk_score"] += count * 2
+    
+    # Detectar spam
+    for keyword in suspicious_patterns["spam_keywords"]:
+        if keyword in text_lower:
+            count = text_lower.count(keyword)
+            findings["spam_content"].append({"keyword": keyword, "count": count})
+            findings["risk_score"] += count * 3
+    
+    # Detectar patrones maliciosos
+    for pattern in suspicious_patterns["malicious_patterns"]:
+        if pattern in text_lower:
+            count = text_lower.count(pattern)
+            findings["malicious_content"].append({"pattern": pattern, "count": count})
+            findings["risk_score"] += count * 2
+    
+    # Detectar enlaces sospechosos
+    links = re.findall(r'href=["\']([^"\']+)["\']', html_text, re.I)
+    for link in links:
+        for domain in suspicious_patterns["suspicious_domains"]:
+            if domain in link.lower():
+                findings["suspicious_links"].append(link)
+                findings["risk_score"] += 5
+    
+    # Detectar iframes sospechosos
+    iframes = re.findall(r'<iframe[^>]+src=["\']([^"\']+)["\']', html_text, re.I)
+    for iframe in iframes:
+        if any(domain in iframe.lower() for domain in suspicious_patterns["suspicious_domains"]):
+            findings["suspicious_links"].append(f"iframe: {iframe}")
+            findings["risk_score"] += 10
+    
+    findings["risk_level"] = "HIGH" if findings["risk_score"] > 20 else "MEDIUM" if findings["risk_score"] > 10 else "LOW"
+    
+    return findings
+
 def seo_extract(html_text):
     out = {"title": None, "meta_description": None, "robots_meta": None}
     try:
@@ -529,6 +600,29 @@ def compute_score_with_details(report):
 
     perf = report.get("performance") or {}
     if perf.get("ttfb_ms") and perf["ttfb_ms"] > 800: reasons.append(("TTFB alto (>800ms)", -3))
+
+    # Penalizaciones por contenido sospechoso
+    content_sec = report.get("content_security") or {}
+    if content_sec.get("risk_score", 0) > 20:
+        reasons.append(("Contenido altamente sospechoso detectado", -30))
+    elif content_sec.get("risk_score", 0) > 10:
+        reasons.append(("Contenido sospechoso detectado", -15))
+    elif content_sec.get("risk_score", 0) > 5:
+        reasons.append(("Algunos patrones sospechosos detectados", -8))
+    
+    if content_sec.get("casino_content"):
+        casino_count = sum(item.get("count", 0) for item in content_sec["casino_content"])
+        if casino_count > 10:
+            reasons.append(("Contenido de casino/juegos excesivo", -20))
+        elif casino_count > 5:
+            reasons.append(("Contenido de casino/juegos detectado", -10))
+    
+    if content_sec.get("spam_content"):
+        spam_count = sum(item.get("count", 0) for item in content_sec["spam_content"])
+        if spam_count > 5:
+            reasons.append(("Contenido spam detectado", -25))
+        elif spam_count > 2:
+            reasons.append(("Algunos términos spam detectados", -12))
 
     for _, delta in reasons: score += int(delta)
 
@@ -953,7 +1047,7 @@ def analyze(url, assume_wp=False, **kwargs):
     # Flags para habilitar checks pesados opcionalmente
     enable_psi = os.getenv("ENABLE_PSI", "0") == "1"
     enable_ux  = os.getenv("ENABLE_UX", "0") == "1"
-    enable_mal = os.getenv("ENABLE_MALWARE_SCAN", "0") == "1"
+    enable_mal = os.getenv("ENABLE_MALWARE_SCAN", "1") == "1"  # Habilitado por defecto
     url = norm_url(url.strip())
     session = make_session()
     
@@ -1111,7 +1205,7 @@ def analyze(url, assume_wp=False, **kwargs):
     # ===== Malware crawling + DOM render (opcional) =====
     if enable_mal and (time.perf_counter() - overall_start) < (overall_budget - 12):
         try:
-            mal = scan_site_malware(r.url, max_pages=40, per_url_budget=0.15)
+            mal = scan_site_malware(r.url, max_pages=60, per_url_budget=0.2)  # Más páginas y tiempo
         except Exception as _e:
             mal = {"infected": None, "urls": [], "summary": {}, "error": str(_e)}
         report["malware_scan"] = mal
@@ -1197,6 +1291,7 @@ def analyze(url, assume_wp=False, **kwargs):
 
     
     report["privacy"] = privacy_scan(r.text)
+    report["content_security"] = content_security_scan(r.text)
     report["seo"] = seo_extract(r.text)
     report["seo_structure"] = seo_structure_from_html(r.text)
     
@@ -1611,6 +1706,65 @@ def print_report(rid):
         seo_struct_issues = seo_struct.get("issues") or []
         seo_struct_issues_html = ("<ul class='list'>%s</ul>" % "".join("<li>%s</li>" % esc(i) for i in seo_struct_issues)) if seo_struct_issues else "<span class='ok'>✔ Sin observaciones</span>"
 
+        # ===== Análisis de Contenido Sospechoso =====
+        content_sec = rep.get("content_security") or {}
+        casino_content = content_sec.get("casino_content") or []
+        spam_content = content_sec.get("spam_content") or []
+        malicious_content = content_sec.get("malicious_content") or []
+        suspicious_links = content_sec.get("suspicious_links") or []
+        risk_score = content_sec.get("risk_score", 0)
+        risk_level = content_sec.get("risk_level", "LOW")
+
+        # HTML para contenido de casino
+        casino_html = "<span class='ok'>✔ Sin contenido de casino detectado</span>"
+        if casino_content:
+            casino_items = []
+            for item in casino_content[:10]:  # Mostrar solo los primeros 10
+                keyword = item.get("keyword", "")
+                count = item.get("count", 0)
+                casino_items.append(f"<li><b>{esc(keyword)}</b> ({count} veces)</li>")
+            casino_html = f"<ul class='list'>{''.join(casino_items)}</ul>"
+            if len(casino_content) > 10:
+                casino_html += f"<div class='muted'>... y {len(casino_content) - 10} más</div>"
+
+        # HTML para spam
+        spam_html = "<span class='ok'>✔ Sin spam detectado</span>"
+        if spam_content:
+            spam_items = []
+            for item in spam_content[:10]:
+                keyword = item.get("keyword", "")
+                count = item.get("count", 0)
+                spam_items.append(f"<li><b>{esc(keyword)}</b> ({count} veces)</li>")
+            spam_html = f"<ul class='list'>{''.join(spam_items)}</ul>"
+            if len(spam_content) > 10:
+                spam_html += f"<div class='muted'>... y {len(spam_content) - 10} más</div>"
+
+        # HTML para patrones maliciosos
+        malicious_html = "<span class='ok'>✔ Sin patrones maliciosos</span>"
+        if malicious_content:
+            malicious_items = []
+            for item in malicious_content[:10]:
+                pattern = item.get("pattern", "")
+                count = item.get("count", 0)
+                malicious_items.append(f"<li><b>{esc(pattern)}</b> ({count} veces)</li>")
+            malicious_html = f"<ul class='list'>{''.join(malicious_items)}</ul>"
+            if len(malicious_content) > 10:
+                malicious_html += f"<div class='muted'>... y {len(malicious_content) - 10} más</div>"
+
+        # HTML para enlaces sospechosos
+        links_html = "<span class='ok'>✔ Sin enlaces sospechosos</span>"
+        if suspicious_links:
+            links_items = []
+            for link in suspicious_links[:15]:
+                links_items.append(f"<li>{esc(link)}</li>")
+            links_html = f"<ul class='list'>{''.join(links_items)}</ul>"
+            if len(suspicious_links) > 15:
+                links_html += f"<div class='muted'>... y {len(suspicious_links) - 15} más</div>"
+
+        # Color del nivel de riesgo
+        risk_color = "bad" if risk_level == "HIGH" else "warn" if risk_level == "MEDIUM" else "ok"
+        risk_html = f"<span class='{risk_color}'><b>{risk_level}</b> (Puntuación: {risk_score})</span>"
+
         # ===== Resumen Seguridad / Malware (labels bonitos) =====
         sec_rep = rep.get("security_reputation") or {}
         _gsb = (sec_rep.get("gsb") or {})
@@ -1837,8 +1991,9 @@ def print_report(rid):
         <li><span>SEO</span><b>8</b></li>
         <li><span>APIs/Integraciones</span><b>9</b></li>
         <li><span>Vulnerabilidades (WPScan)</span><b>10</b></li>
-        <li><span>Acciones sugeridas</span><b>11</b></li>
-        <li><span>Anexo</span><b>12</b></li>
+        <li><span>Análisis de Contenido</span><b>11</b></li>
+        <li><span>Acciones sugeridas</span><b>12</b></li>
+        <li><span>Anexo</span><b>13</b></li>
       </ol>
     </div>
 
@@ -2004,6 +2159,21 @@ def print_report(rid):
         <h3 style="margin:6mm 0 2mm 0;font-size:14px">Plugins</h3>
         %s
         <h3 style="margin:6mm 0 2mm 0;font-size:14px">Temas</h3>
+        %s
+      </div>
+    </div>
+
+    <div class="section no-break">
+      <div class="title">Análisis de Contenido Sospechoso</div>
+      <div class="body">
+        <div class="kv"><b>Nivel de Riesgo:</b> %s</div>
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Contenido de Casino/Juegos</h3>
+        %s
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Contenido Spam</h3>
+        %s
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Patrones Maliciosos</h3>
+        %s
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Enlaces Sospechosos</h3>
         %s
       </div>
     </div>
@@ -2183,6 +2353,13 @@ alert_html,
             str(core_count),
             plugins_block,
             themes_block,
+
+            # Análisis de Contenido
+            risk_html,
+            casino_html,
+            spam_html,
+            malicious_html,
+            links_html,
 
             # Seguridad / Malware (labels y nums)
             gsb_label,
