@@ -1174,7 +1174,7 @@ def print_report(rid):
   :root{
     
     --bg:#f5f7fb; --paper:#ffffff; --ink:#0b1220; --muted:#6a768c;
-    --line:#e6eaf2; --brand:#1f7ae0; --brand2:#0fa878; --accent:#111827;
+    --line:#e6eaf2; --brand:#0a5bb7; --brand2:#0fa878; --accent:#111827;
     --ok:#16a34a; --warn:#b45309; --bad:#b91c1c;
   }
   @page{ margin:20mm }
@@ -1187,7 +1187,20 @@ def print_report(rid):
   body{ background:var(--bg) }
   .wrap{ max-width:960px; margin:0 auto; padding:0 8mm }
   .page{ page-break-after:always; }
-  .no-break{ page-break-inside:avoid }
+  
+ .no-break {
+  page-break-inside: avoid;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;  
+  align-items: center;     
+  text-align: center;       
+}
+@media print {
+  .no-break {
+    min-height: 100%;       
+  }
+}
   .hrow{ height:8mm }
     img{
         width:250px;
@@ -1197,7 +1210,7 @@ def print_report(rid):
   .cover .kicker{ color:#1f2937; font-weight:700; letter-spacing:.08em; text-transform:uppercase; font-size:12px }
   .cover h1{ font-size:44px; line-height:1.1; margin:8mm 0 2mm 0; font-weight:900; color:var(--brand) }
   .cover h2{ font-size:20px; margin:0 0 16mm; color:#1f2937; font-weight:700 }
-  .cover .band{ height:12mm; background:var(--brand); color:#fff; display:flex; align-items:center; padding:0 8mm; font-weight:700 }
+  .cover .band{ height:12mm; background:var(--brand); color:#fff; display:flex; align-items:center; padding:0 8mm; font-weight:700; border-radius:7mm;}
   .cover .meta{ margin-top:12mm; color:var(--muted) }
   .cover .meta div{ margin:2mm 0 }
 
@@ -1212,6 +1225,7 @@ def print_report(rid):
   .section{ background:var(--paper); border:1px solid var(--line); margin:7mm 0; padding: 15px;}
   .section .title{
     background:var(--brand); color:#fff; font-weight:800; letter-spacing:.02em;
+    border-radius:7mm;
     padding:3mm 8mm; font-size:16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:2mm;
   }
   pre{
