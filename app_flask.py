@@ -667,6 +667,169 @@ def privacy_scan(html_text):
         pass
     return out
 
+def ux_analysis_scan(html_text, base_url=""):
+    """
+    Análisis exhaustivo de UX/UI: imágenes rotas, formularios, botones, etc.
+    """
+    from urllib.parse import urljoin, urlparse
+    import requests
+    
+    analysis = {
+        "broken_images": [],
+        "missing_alt_text": [],
+        "forms_analysis": [],
+        "buttons_analysis": [],
+        "links_analysis": [],
+        "media_issues": [],
+        "accessibility_issues": [],
+        "performance_issues": []
+    }
+    
+    try:
+        # Analizar imágenes
+        images = re.findall(r'<img[^>]+src=["\']([^"\']+)["\'][^>]*>', html_text, re.I)
+        for img_tag in re.finditer(r'<img[^>]*>', html_text, re.I):
+            img_html = img_tag.group(0)
+            src_match = re.search(r'src=["\']([^"\']+)["\']', img_html, re.I)
+            alt_match = re.search(r'alt=["\']([^"\']*)["\']', img_html, re.I)
+            
+            if src_match:
+                img_src = src_match.group(1)
+                full_url = urljoin(base_url, img_src)
+                
+                # Verificar si la imagen está rota
+                try:
+                    response = requests.head(full_url, timeout=5, allow_redirects=True)
+                    if response.status_code >= 400:
+                        analysis["broken_images"].append({
+                            "url": full_url,
+                            "src": img_src,
+                            "status_code": response.status_code,
+                            "error": f"HTTP {response.status_code}"
+                        })
+                except Exception as e:
+                    analysis["broken_images"].append({
+                        "url": full_url,
+                        "src": img_src,
+                        "status_code": "ERROR",
+                        "error": str(e)
+                    })
+                
+                # Verificar alt text
+                if not alt_match or not alt_match.group(1).strip():
+                    analysis["missing_alt_text"].append({
+                        "url": full_url,
+                        "src": img_src,
+                        "issue": "Falta atributo alt o está vacío"
+                    })
+        
+        # Analizar formularios
+        forms = re.findall(r'<form[^>]*>(.*?)</form>', html_text, re.I | re.S)
+        for i, form in enumerate(forms):
+            form_issues = []
+            
+            # Verificar campos requeridos sin labels
+            inputs = re.findall(r'<input[^>]*>', form, re.I)
+            for input_tag in inputs:
+                if 'required' in input_tag.lower():
+                    input_id = re.search(r'id=["\']([^"\']+)["\']', input_tag, re.I)
+                    if input_id:
+                        input_id = input_id.group(1)
+                        if not re.search(rf'<label[^>]*for=["\']{re.escape(input_id)}["\']', form, re.I):
+                            form_issues.append(f"Campo requerido sin label: {input_tag[:50]}...")
+            
+            # Verificar botones de envío
+            submit_buttons = re.findall(r'<input[^>]*type=["\']submit["\'][^>]*>', form, re.I)
+            if not submit_buttons:
+                submit_buttons = re.findall(r'<button[^>]*type=["\']submit["\'][^>]*>', form, re.I)
+            if not submit_buttons:
+                form_issues.append("Formulario sin botón de envío visible")
+            
+            if form_issues:
+                analysis["forms_analysis"].append({
+                    "form_index": i,
+                    "issues": form_issues,
+                    "form_snippet": form[:200] + "..." if len(form) > 200 else form
+                })
+        
+        # Analizar botones
+        buttons = re.findall(r'<button[^>]*>(.*?)</button>', html_text, re.I | re.S)
+        for i, button in enumerate(buttons):
+            button_issues = []
+            
+            # Verificar botones sin texto
+            if not button.strip() or len(button.strip()) < 2:
+                button_issues.append("Botón sin texto descriptivo")
+            
+            # Verificar botones con solo iconos
+            if re.search(r'<i[^>]*class=["\'][^"\']*icon[^"\']*["\'][^>]*>', button, re.I):
+                if not re.search(r'aria-label=["\'][^"\']+["\']', button, re.I):
+                    button_issues.append("Botón con solo icono sin aria-label")
+            
+            if button_issues:
+                analysis["buttons_analysis"].append({
+                    "button_index": i,
+                    "issues": button_issues,
+                    "button_snippet": button[:100] + "..." if len(button) > 100 else button
+                })
+        
+        # Analizar enlaces
+        links = re.findall(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html_text, re.I | re.S)
+        for href, link_text in links:
+            link_issues = []
+            
+            # Verificar enlaces sin texto
+            if not link_text.strip() or len(link_text.strip()) < 2:
+                link_issues.append("Enlace sin texto descriptivo")
+            
+            # Verificar enlaces con texto genérico
+            generic_texts = ["click here", "read more", "here", "link", "más", "aquí"]
+            if any(generic in link_text.lower().strip() for generic in generic_texts):
+                link_issues.append(f"Enlace con texto genérico: '{link_text.strip()}'")
+            
+            # Verificar enlaces que abren en nueva ventana sin advertencia
+            if 'target="_blank"' in html_text and 'rel="noopener"' not in html_text:
+                link_issues.append("Enlace abre en nueva ventana sin rel='noopener'")
+            
+            if link_issues:
+                analysis["links_analysis"].append({
+                    "url": href,
+                    "text": link_text.strip(),
+                    "issues": link_issues
+                })
+        
+        # Analizar problemas de media
+        videos = re.findall(r'<video[^>]*>', html_text, re.I)
+        for video in videos:
+            if 'controls' not in video.lower():
+                analysis["media_issues"].append({
+                    "type": "video",
+                    "issue": "Video sin controles",
+                    "snippet": video
+                })
+        
+        # Analizar problemas de accesibilidad
+        if re.search(r'<div[^>]*onclick[^>]*>', html_text, re.I):
+            analysis["accessibility_issues"].append({
+                "issue": "Div con onclick (debería ser button)",
+                "count": len(re.findall(r'<div[^>]*onclick[^>]*>', html_text, re.I))
+            })
+        
+        # Analizar problemas de rendimiento
+        large_images = re.findall(r'<img[^>]+src=["\']([^"\']+)["\'][^>]*>', html_text, re.I)
+        for img in large_images:
+            if any(size in img.lower() for size in ['large', 'full', 'original']):
+                analysis["performance_issues"].append({
+                    "type": "large_image",
+                    "url": img,
+                    "issue": "Imagen posiblemente grande sin optimización"
+                })
+        
+    except Exception as e:
+        analysis["error"] = str(e)
+    
+    return analysis
+
 def content_security_scan(html_text, base_url=""):
     """
     Análisis exhaustivo de contenido para detectar patrones sospechosos, scripts, imágenes rotas, etc.
@@ -1478,6 +1641,7 @@ def analyze(url, assume_wp=False, **kwargs):
     report["content_security"] = content_security_scan(r.text, r.url)
     report["seo"] = seo_extract(r.text)
     report["seo_structure"] = seo_structure_from_html(r.text)
+    report["ux_analysis"] = ux_analysis_scan(r.text, r.url)
     
     report["jquery_version"] = detect_jquery_version(r.text)
     # Checks de integraciones sujetos a presupuesto
@@ -1766,32 +1930,11 @@ def print_report(rid):
         plugins_map = wp.get("plugins") or {}
         plugins_list = list(plugins_map.keys())
 
-        core_v = vulns.get("core") or {}
-        core_count = int(core_v.get("count") or 0)
-        plug_v = vulns.get("plugins") or {}
-        theme_v = vulns.get("themes") or {}
+        # WPScan removido
 
         def li(items): return "".join("<li>%s</li>" % esc(i) for i in items if i)
 
-        def list_vuln_items(vlist, max_items=10):
-            if not vlist:
-                return "<li>—</li>"
-            items = []
-            for v in vlist[:max_items]:
-                title = v.get("title") or "Vulnerabilidad"
-                cve = (v.get("cve") or [""])[0] if isinstance(v.get("cve"), list) else (v.get("cve") or "")
-                cvss_raw = v.get("cvss")
-         
-                if isinstance(cvss_raw, dict):
-                    cvss = cvss_raw.get("score") or cvss_raw.get("vectorString") or ""
-                else:
-                    cvss = cvss_raw or ""
-                badge = (" <span class='chip chip-warn'>CVE %s</span>" % esc(cve)) if cve else ""
-                score = (" <span class='muted'>(CVSS %s)</span>" % esc(cvss)) if cvss else ""
-                items.append("<li>%s%s%s</li>" % (esc(title), badge, score))
-            if len(vlist) > max_items:
-                items.append("<li>… y %d más</li>" % (len(vlist)-max_items))
-            return "".join(items)
+        # Funciones de WPScan removidas
 
 
         if mixed:
@@ -1859,21 +2002,7 @@ def print_report(rid):
         acciones_html = "<span class='ok'>✔ Sin acciones críticas pendientes</span>" if not acciones else "<ul class='list'>%s</ul>" % li(acciones)
 
 
-        plugins_block = ""
-        for slug, data in plug_v.items():
-            if not data: continue
-            cnt = int(data.get("count") or 0)
-            ver = data.get("version") or "n/d"
-            plugins_block += "<div class='kv'><b>%s</b> v%s · %d vulns</div><ul class='list'>%s</ul>" % (esc(slug), esc(ver), cnt, list_vuln_items(data.get("items") or []))
-        if not plugins_block: plugins_block = "<div class='kv'>—</div>"
-
-        themes_block = ""
-        for slug, data in theme_v.items():
-            if not data: continue
-            cnt = int(data.get("count") or 0)
-            ver = data.get("version") or "n/d"
-            themes_block += "<div class='kv'><b>%s</b> v%s · %d vulns</div><ul class='list'>%s</ul>" % (esc(slug), esc(ver), cnt, list_vuln_items(data.get("items") or []))
-        if not themes_block: themes_block = "<div class='kv'>—</div>"
+        # Variables de WPScan removidas
 
         score_val = int(rep_obj.score or 0)
         score_val = max(0, min(100, score_val))
@@ -1911,11 +2040,11 @@ def print_report(rid):
         risk_score = content_sec.get("risk_score", 0)
         risk_level = content_sec.get("risk_level", "LOW")
 
-        # HTML para contenido de casino con contexto
+        # HTML para contenido de casino con contexto - TODAS las evidencias
         casino_html = "<span class='ok'>✔ Sin contenido de casino detectado</span>"
         if casino_content:
             casino_items = []
-            for item in casino_content[:8]:
+            for item in casino_content:  # Sin límite
                 keyword = item.get("keyword", "")
                 count = item.get("count", 0)
                 contexts = item.get("contexts", [])
@@ -1923,14 +2052,12 @@ def print_report(rid):
                 if contexts:
                     casino_items.append(f"<li class='context-item'>Contexto: {esc(contexts[0][:100])}...</li>")
             casino_html = f"<ul class='list'>{''.join(casino_items)}</ul>"
-            if len(casino_content) > 8:
-                casino_html += f"<div class='muted'>... y {len(casino_content) - 8} más</div>"
 
-        # HTML para spam con contexto
+        # HTML para spam con contexto - TODAS las evidencias
         spam_html = "<span class='ok'>✔ Sin spam detectado</span>"
         if spam_content:
             spam_items = []
-            for item in spam_content[:8]:
+            for item in spam_content:  # Sin límite
                 keyword = item.get("keyword", "")
                 count = item.get("count", 0)
                 contexts = item.get("contexts", [])
@@ -1938,39 +2065,33 @@ def print_report(rid):
                 if contexts:
                     spam_items.append(f"<li class='context-item'>Contexto: {esc(contexts[0][:100])}...</li>")
             spam_html = f"<ul class='list'>{''.join(spam_items)}</ul>"
-            if len(spam_content) > 8:
-                spam_html += f"<div class='muted'>... y {len(spam_content) - 8} más</div>"
 
-        # HTML para patrones maliciosos
+        # HTML para patrones maliciosos - TODAS las evidencias
         malicious_html = "<span class='ok'>✔ Sin patrones maliciosos</span>"
         if malicious_content:
             malicious_items = []
-            for item in malicious_content[:8]:
+            for item in malicious_content:  # Sin límite
                 pattern = item.get("pattern", "")
                 count = item.get("count", 0)
                 malicious_items.append(f"<li><b>{esc(pattern)}</b> ({count} veces)</li>")
             malicious_html = f"<ul class='list'>{''.join(malicious_items)}</ul>"
-            if len(malicious_content) > 8:
-                malicious_html += f"<div class='muted'>... y {len(malicious_content) - 8} más</div>"
 
-        # HTML para scripts sospechosos
+        # HTML para scripts sospechosos - TODAS las evidencias
         scripts_html = "<span class='ok'>✔ Sin scripts sospechosos</span>"
         if suspicious_scripts:
             script_items = []
-            for script in suspicious_scripts[:10]:
+            for script in suspicious_scripts:  # Sin límite
                 pattern = script.get("pattern", "")
                 snippet = script.get("snippet", "")
                 script_items.append(f"<li><b>{esc(pattern)}</b></li>")
                 script_items.append(f"<li class='script-snippet'><pre class='code-snippet'>{esc(snippet)}</pre></li>")
             scripts_html = f"<ul class='list'>{''.join(script_items)}</ul>"
-            if len(suspicious_scripts) > 10:
-                scripts_html += f"<div class='muted'>... y {len(suspicious_scripts) - 10} más</div>"
 
-        # HTML para enlaces sospechosos
+        # HTML para enlaces sospechosos - TODAS las evidencias
         links_html = "<span class='ok'>✔ Sin enlaces sospechosos</span>"
         if suspicious_links:
             links_items = []
-            for link_data in suspicious_links[:15]:
+            for link_data in suspicious_links:  # Sin límite
                 if isinstance(link_data, dict):
                     url = link_data.get("url", "")
                     link_type = link_data.get("type", "")
@@ -1979,47 +2100,39 @@ def print_report(rid):
                 else:
                     links_items.append(f"<li>{esc(link_data)}</li>")
             links_html = f"<ul class='list'>{''.join(links_items)}</ul>"
-            if len(suspicious_links) > 15:
-                links_html += f"<div class='muted'>... y {len(suspicious_links) - 15} más</div>"
 
-        # HTML para imágenes rotas/sospechosas
+        # HTML para imágenes rotas/sospechosas - TODAS las evidencias
         images_html = "<span class='ok'>✔ Sin imágenes sospechosas</span>"
         if broken_images:
             image_items = []
-            for img_data in broken_images[:10]:
+            for img_data in broken_images:  # Sin límite
                 url = img_data.get("url", "")
                 img_type = img_data.get("type", "")
                 reason = img_data.get("reason", "")
                 image_items.append(f"<li><b>{esc(url)}</b> - {esc(reason)}</li>")
             images_html = f"<ul class='list'>{''.join(image_items)}</ul>"
-            if len(broken_images) > 10:
-                images_html += f"<div class='muted'>... y {len(broken_images) - 10} más</div>"
 
-        # HTML para recursos externos
+        # HTML para recursos externos - TODAS las evidencias
         resources_html = "<span class='ok'>✔ Sin recursos externos sospechosos</span>"
         if external_resources:
             resource_items = []
-            for res_data in external_resources[:10]:
+            for res_data in external_resources:  # Sin límite
                 url = res_data.get("url", "")
                 res_type = res_data.get("type", "")
                 reason = res_data.get("reason", "")
                 resource_items.append(f"<li><b>{esc(url)}</b> - {esc(reason)}</li>")
             resources_html = f"<ul class='list'>{''.join(resource_items)}</ul>"
-            if len(external_resources) > 10:
-                resources_html += f"<div class='muted'>... y {len(external_resources) - 10} más</div>"
 
-        # HTML para elementos ocultos
+        # HTML para elementos ocultos - TODAS las evidencias
         hidden_html = "<span class='ok'>✔ Sin elementos ocultos</span>"
         if hidden_elements:
             hidden_items = []
-            for hidden_data in hidden_elements[:8]:
+            for hidden_data in hidden_elements:  # Sin límite
                 element = hidden_data.get("element", "")
                 hidden_type = hidden_data.get("type", "")
                 reason = hidden_data.get("reason", "")
                 hidden_items.append(f"<li><b>{esc(element)}</b> - {esc(reason)}</li>")
             hidden_html = f"<ul class='list'>{''.join(hidden_items)}</ul>"
-            if len(hidden_elements) > 8:
-                hidden_html += f"<div class='muted'>... y {len(hidden_elements) - 8} más</div>"
 
         # Color del nivel de riesgo
         risk_color = "bad" if risk_level == "HIGH" else "warn" if risk_level == "MEDIUM" else "ok"
@@ -2143,6 +2256,87 @@ def print_report(rid):
 
         heur_list_html = "<ul class='list'>" + "".join(f"<li>{esc(i)}</li>" for i in (heu.get('issues') or [])) + "</ul>"
         recs_html = "<ol class='list'>" + "".join(f"<li>{esc(i)}</li>" for i in recs) + "</ol>"
+
+        # ===== Análisis UX/UI Detallado =====
+        ux_analysis = rep.get("ux_analysis") or {}
+        
+        # Imágenes rotas
+        broken_images = ux_analysis.get("broken_images", [])
+        broken_images_html = "<span class='ok'>✔ Sin imágenes rotas</span>"
+        if broken_images:
+            broken_items = []
+            for img in broken_images:
+                broken_items.append(f"<li><b>{esc(img.get('url', ''))}</b> - {esc(img.get('error', ''))}</li>")
+            broken_images_html = f"<ul class='list'>{''.join(broken_items)}</ul>"
+        
+        # Alt text faltante
+        missing_alt = ux_analysis.get("missing_alt_text", [])
+        missing_alt_html = "<span class='ok'>✔ Todas las imágenes tienen alt text</span>"
+        if missing_alt:
+            alt_items = []
+            for img in missing_alt:
+                alt_items.append(f"<li><b>{esc(img.get('url', ''))}</b> - {esc(img.get('issue', ''))}</li>")
+            missing_alt_html = f"<ul class='list'>{''.join(alt_items)}</ul>"
+        
+        # Formularios
+        forms_analysis = ux_analysis.get("forms_analysis", [])
+        forms_html = "<span class='ok'>✔ Sin problemas en formularios</span>"
+        if forms_analysis:
+            form_items = []
+            for form in forms_analysis:
+                form_items.append(f"<li><b>Formulario {form.get('form_index', '')}</b></li>")
+                for issue in form.get("issues", []):
+                    form_items.append(f"<li class='context-item'>{esc(issue)}</li>")
+            forms_html = f"<ul class='list'>{''.join(form_items)}</ul>"
+        
+        # Botones
+        buttons_analysis = ux_analysis.get("buttons_analysis", [])
+        buttons_html = "<span class='ok'>✔ Sin problemas en botones</span>"
+        if buttons_analysis:
+            button_items = []
+            for button in buttons_analysis:
+                button_items.append(f"<li><b>Botón {button.get('button_index', '')}</b></li>")
+                for issue in button.get("issues", []):
+                    button_items.append(f"<li class='context-item'>{esc(issue)}</li>")
+            buttons_html = f"<ul class='list'>{''.join(button_items)}</ul>"
+        
+        # Enlaces
+        links_analysis = ux_analysis.get("links_analysis", [])
+        links_html = "<span class='ok'>✔ Sin problemas en enlaces</span>"
+        if links_analysis:
+            link_items = []
+            for link in links_analysis:
+                link_items.append(f"<li><b>{esc(link.get('url', ''))}</b> - {esc(link.get('text', ''))}</li>")
+                for issue in link.get("issues", []):
+                    link_items.append(f"<li class='context-item'>{esc(issue)}</li>")
+            links_html = f"<ul class='list'>{''.join(link_items)}</ul>"
+        
+        # Media
+        media_issues = ux_analysis.get("media_issues", [])
+        media_html = "<span class='ok'>✔ Sin problemas en media</span>"
+        if media_issues:
+            media_items = []
+            for media in media_issues:
+                media_items.append(f"<li><b>{esc(media.get('type', ''))}</b> - {esc(media.get('issue', ''))}</li>")
+            media_html = f"<ul class='list'>{''.join(media_items)}</ul>"
+        
+        # Accesibilidad
+        accessibility_issues = ux_analysis.get("accessibility_issues", [])
+        accessibility_html = "<span class='ok'>✔ Sin problemas de accesibilidad</span>"
+        if accessibility_issues:
+            acc_items = []
+            for acc in accessibility_issues:
+                acc_items.append(f"<li><b>{esc(acc.get('issue', ''))}</b> - {acc.get('count', 0)} ocurrencias</li>")
+            accessibility_html = f"<ul class='list'>{''.join(acc_items)}</ul>"
+        
+        # Rendimiento
+        performance_issues = ux_analysis.get("performance_issues", [])
+        performance_html = "<span class='ok'>✔ Sin problemas de rendimiento</span>"
+        if performance_issues:
+            perf_items = []
+            for perf in performance_issues:
+                perf_items.append(f"<li><b>{esc(perf.get('url', ''))}</b> - {esc(perf.get('issue', ''))}</li>")
+            performance_html = f"<ul class='list'>{''.join(perf_items)}</ul>"
 
        # ===== Malware: variables para impresión =====
         mal = rep.get("malware_scan") or {}
@@ -2278,12 +2472,7 @@ def print_report(rid):
   .cover .meta{ margin-top:12mm; color:var(--muted) }
   .cover .meta div{ margin:2mm 0 }
 
-  /* Índice */
-  .toc{ background:var(--paper); border:1px solid var(--line); padding:10mm 10mm; }
-  .toc h2{ font-size:22px; margin:0 0 6mm; font-weight:800 }
-  .toc ol{ list-style:none; padding:0; margin:0 }
-  .toc li{ display:flex; justify-content:space-between; border-bottom:1px solid var(--line); padding:3mm 0; }
-  .toc li b{ color:#0f172a }
+
 
   /* Secciones / Tarjetas */
   .section{ background:var(--paper); border:1px solid var(--line); margin:7mm 0; padding: 15px;}
@@ -2501,25 +2690,7 @@ def print_report(rid):
       </div>
     </div>
 
-    <!-- INDICE -->
-    <div class="page toc">
-      <h2>Índice</h2>
-      <ol>
-        <li><span>Resumen Ejecutivo</span><b>3</b></li>
-        <li><span>📈 SECCIÓN SEO</span><b>4</b></li>
-        <li style="margin-left:20px"><span>SEO Básico</span><b>4</b></li>
-        <li style="margin-left:20px"><span>Estructura SEO</span><b>5</b></li>
-        <li style="margin-left:20px"><span>WordPress</span><b>6</b></li>
-        <li><span>🛡️ SECCIÓN SEGURIDAD</span><b>7</b></li>
-        <li style="margin-left:20px"><span>Detección de Malware</span><b>7</b></li>
-        <li style="margin-left:20px"><span>APIs de Seguridad</span><b>8</b></li>
-        <li style="margin-left:20px"><span>Análisis de Contenido</span><b>9</b></li>
-        <li><span>🎨 SECCIÓN UI/UX</span><b>10</b></li>
-        <li style="margin-left:20px"><span>Core Web Vitals</span><b>10</b></li>
-        <li style="margin-left:20px"><span>UX / Accesibilidad</span><b>11</b></li>
-        <li><span>Recomendaciones</span><b>12</b></li>
-      </ol>
-    </div>
+
 
     <!-- RESUMEN -->
     <div class="section no-break">
@@ -2606,6 +2777,40 @@ def print_report(rid):
           </ul>
         </div>
       </div>
+
+      <div class="subsection">
+        <div class="subsection-title">Robots.txt y Sitemap</div>
+        <div class="body">
+          <div class="kv"><b>Robots.txt:</b> %s</div>
+          <div class="kv"><b>Sitemap XML:</b> %s</div>
+          <div class="kv"><b>Pistas sensibles en robots.txt:</b></div>
+          %s
+        </div>
+      </div>
+
+      <div class="subsection">
+        <div class="subsection-title">Enlaces y Estructura</div>
+        <div class="body">
+          <div class="kv"><b>Enlaces internos:</b> %s</div>
+          <div class="kv"><b>Enlaces externos:</b> %s</div>
+          <div class="kv"><b>Enlaces rotos:</b> %s</div>
+          <div class="kv"><b>Enlaces nofollow:</b> %s</div>
+          <div class="kv"><b>Enlaces dofollow:</b> %s</div>
+          <div class="kv"><b>Enlaces mailto:</b> %s</div>
+        </div>
+      </div>
+
+      <div class="subsection">
+        <div class="subsection-title">Meta Tags y Schema</div>
+        <div class="body">
+          <div class="kv"><b>Canonical:</b> %s</div>
+          <div class="kv"><b>Open Graph:</b> %s</div>
+          <div class="kv"><b>Twitter Card:</b> %s</div>
+          <div class="kv"><b>Schema.org:</b> %s</div>
+          <div class="kv"><b>Hreflang:</b> %s</div>
+          <div class="kv"><b>Alt text en imágenes:</b> %s</div>
+        </div>
+      </div>
     </div>
 
       <div class="section">
@@ -2681,16 +2886,35 @@ def print_report(rid):
       </div>
     </div>
 
-    <div class="section no-break">
-      <div class="title">Vulnerabilidades (WPScan)</div>
-      <div class="body">
-        <div class="kv"><b>Núcleo:</b> %s vulnerabilidades</div>
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Plugins</h3>
-        %s
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Temas</h3>
-        %s
-      </div>
+
+
     </div>
+
+
+      <div class="subsection">
+        <div class="subsection-title">APIs de Seguridad</div>
+        <div class="body">
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔍 Google Safe Browsing</h3>
+          <div class="kv"><b>Estado:</b> %s</div>
+          <div class="kv"><b>Detalles:</b></div>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🛡️ VirusTotal</h3>
+          <div class="kv"><b>Estado:</b> %s</div>
+          <div class="kv"><b>Detalles:</b></div>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🚨 URLHaus</h3>
+          <div class="kv"><b>Estado:</b> %s</div>
+          <div class="kv"><b>Detalles:</b></div>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎣 PhishTank</h3>
+          <div class="kv"><b>Estado:</b> %s</div>
+          <div class="kv"><b>Detalles:</b></div>
+          %s
+        </div>
+      </div>
 
       <div class="subsection">
         <div class="subsection-title">Análisis de Contenido Sospechoso</div>
@@ -2724,32 +2948,6 @@ def print_report(rid):
       </div>
     </div>
 
-
-      <div class="subsection">
-        <div class="subsection-title">APIs de Seguridad</div>
-        <div class="body">
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔍 Google Safe Browsing</h3>
-          <div class="kv"><b>Estado:</b> %s</div>
-          <div class="kv"><b>Detalles:</b></div>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🛡️ VirusTotal</h3>
-          <div class="kv"><b>Estado:</b> %s</div>
-          <div class="kv"><b>Detalles:</b></div>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🚨 URLHaus</h3>
-          <div class="kv"><b>Estado:</b> %s</div>
-          <div class="kv"><b>Detalles:</b></div>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎣 PhishTank</h3>
-          <div class="kv"><b>Estado:</b> %s</div>
-          <div class="kv"><b>Detalles:</b></div>
-          %s
-        </div>
-      </div>
-
     <!-- SECCIÓN UI/UX -->
     <div class="main-section">
       <div class="main-section-title">🎨 SECCIÓN UI/UX</div>
@@ -2762,6 +2960,35 @@ def print_report(rid):
           <div class="kv"><b>INP:</b> %s ms</div>
           <div class="kv"><b>Score (mobile):</b> %s</div>
           <div class="kv"><b>Score (desktop):</b> %s</div>
+        </div>
+      </div>
+
+      <div class="subsection">
+        <div class="subsection-title">Análisis de UX/UI Detallado</div>
+        <div class="body">
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🖼️ Imágenes Rotas</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📝 Alt Text Faltante</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📋 Formularios</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔘 Botones</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔗 Enlaces</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎥 Media</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">♿ Accesibilidad</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">⚡ Rendimiento</h3>
+          %s
         </div>
       </div>
 
@@ -2909,6 +3136,34 @@ alert_html,
             # Estructura SEO
             seo_struct_table, (("<span class='ok'>✔ Sin observaciones</span>") if not seo_struct_issues else ("<ul class='list'>%s</ul>" % "".join("<li>%s</li>" % esc(i) for i in seo_struct_issues))),
 
+            # WordPress
+            wp_version,
+            wp_latest,
+            wp_outdated,
+            plugins_list_html,
+            themes_list_html,
+
+            # Robots.txt y Sitemap
+            yn(exposed.get("robots_txt")),
+            yn(exposed.get("sitemap_xml")),
+            robots_html,
+
+            # Enlaces y Estructura
+            yn(seo.get("internal_links")),
+            yn(seo.get("external_links")),
+            yn(seo.get("broken_links")),
+            yn(seo.get("nofollow_links")),
+            yn(seo.get("dofollow_links")),
+            yn(seo.get("mailto_found")),
+
+            # Meta Tags y Schema
+            yn(seo.get("canonical")),
+            yn(seo.get("open_graph")),
+            yn(seo.get("twitter_card")),
+            yn(seo.get("schema_org")),
+            yn(seo.get("hreflang")),
+            yn(seo.get("alt_text_images")),
+
             # APIs/Integraciones
             yn(admin_ajax_open),
             yn(wp_cron_accessible),
@@ -2920,9 +3175,7 @@ alert_html,
             esc(jquery_version or "—"),
 
             # WPScan
-            str(core_count),
-            plugins_block,
-            themes_block,
+
 
             # Análisis de Contenido
             risk_html,
@@ -2951,6 +3204,16 @@ alert_html,
             str(inp_ms),
             (str(psi_score_mobile) if psi_score_mobile != "—" else "—"),
             (str(psi_score_desktop) if psi_score_desktop != "—" else "—"),
+
+            # Análisis UX/UI Detallado
+            broken_images_html,
+            missing_alt_html,
+            forms_html,
+            buttons_html,
+            links_html,
+            media_html,
+            accessibility_html,
+            performance_html,
 
             # UX/UI y Accesibilidad
             viol_count,
