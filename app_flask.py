@@ -20,6 +20,8 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter, Retry
 from service.ux import crux_site, axe_scan, heuristics_ux
+from service.malware import scan_site_malware
+
 load_dotenv()
 
 
@@ -1037,6 +1039,39 @@ def analyze(url):
     report["performance"]["psi_score_mobile"] = pm.get("perf_score")
     report["performance"]["psi_score_desktop"] = pd.get("perf_score")
 
+    # ===== Malware crawling + DOM render (antes de privacy/seo y antes del score) =====
+    try:
+        # Crawling de hasta 60 páginas internas (prioriza keywords sospechosas)
+        mal = scan_site_malware(r.url, max_pages=60, per_url_budget=0.2)
+    except Exception as _e:
+        mal = {"infected": None, "urls": [], "summary": {}, "error": str(_e)}
+
+    report["malware_scan"] = mal
+
+    # Si hay URLs sospechosas, revalida con GSB (por lote) para marcar matches oficiales
+    sus = (mal.get("summary") or {}).get("suspected_urls") or []
+    sus = [u for u in sus if u != r.url][:10]  # limita a 10 por cuota
+
+    if sus and os.getenv("GSB_API_KEY"):
+        body = {
+            "client": {"clientId": "idei-auditor", "clientVersion": "1.0"},
+            "threatInfo": {
+                "threatTypes": ["MALWARE","SOCIAL_ENGINEERING","UNWANTED_SOFTWARE","POTENTIALLY_HARMFUL_APPLICATION"],
+                "platformTypes": ["ANY_PLATFORM"],
+                "threatEntryTypes": ["URL"],
+                "threatEntries": [{"url": u} for u in sus],
+            },
+        }
+        try:
+            multi = requests.post(
+                f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={os.getenv('GSB_API_KEY','')}",
+                json=body, headers=UA, timeout=REQ_TIMEOUT
+            )
+            report.setdefault("security_reputation", {})["gsb_suspects"] = multi.json() if multi.ok else {}
+        except Exception as _e:
+            report.setdefault("security_reputation", {})["gsb_suspects_error"] = str(_e)
+
+
     report["ux"] = {}
 
     axe = {"enabled": False, "violations": []}
@@ -1450,6 +1485,23 @@ def print_report(rid):
         heur_list_html = "<ul class='list'>" + "".join(f"<li>{esc(i)}</li>" for i in (heu.get('issues') or [])) + "</ul>"
         recs_html = "<ol class='list'>" + "".join(f"<li>{esc(i)}</li>" for i in recs) + "</ol>"
 
+        # ===== Malware: variables para impresión =====
+        mal = rep.get("malware_scan") or {}
+        infected_label = "Sí" if mal.get("infected") else ("No" if mal.get("infected") is False else "—")
+
+        sus_urls = (mal.get("summary") or {}).get("suspected_urls") or []
+        urls_html = "<ul class='list'>" + "".join(f"<li>{esc(u)}</li>" for u in sus_urls[:20]) + \
+                    ("<li>…</li>" if len(sus_urls) > 20 else "") + "</ul>"
+
+        
+        snips = []
+        for e in (mal.get("urls") or [])[:10]:
+            if e.get("snippets"):
+                for s in e["snippets"][:2]:
+
+                    snips.append(f"<div><b>{esc(e.get('url',''))}</b><pre>{esc(s[:1200])}</pre></div>")
+        evid_html = "".join(snips) or "<span class='ok'>✔ Sin evidencias capturadas</span>"
+
    
         html_out = """<!doctype html>
 <html lang="es">
@@ -1791,6 +1843,16 @@ def print_report(rid):
       </div>
     </div>
 
+<div class="section no-break">
+  <div class="title">Detección de Malware (crawling + DOM)</div>
+  <div class="body">
+    <div class="kv"><b>Infección detectada:</b> %s</div>
+    <h3 style="margin:6mm 0 2mm 0;font-size:14px">URLs sospechosas</h3>
+    %s
+    <h3 style="margin:6mm 0 2mm 0;font-size:14px">Evidencias (snippets)</h3>
+    %s
+  </div>
+</div>
 
 
     <div class="section no-break">
@@ -1941,6 +2003,11 @@ def print_report(rid):
             heur_list_html,
             recs_html,
 
+             # Malware (3 placeholders NUEVOS en el HTML)
+            infected_label,
+            urls_html,
+            evid_html,
+            
             # Acciones
             acciones_html,
             
