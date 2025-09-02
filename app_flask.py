@@ -316,8 +316,7 @@ def gsb_check(url):
     Google Safe Browsing v4: amenaza si hay matches.
     """
     api_key = os.getenv("GSB_API_KEY")
-    if not api_key:
-        return {"enabled": False, "unsafe": None, "raw": None}
+  
     body = {
         "client": {"clientId": "idei-auditor", "clientVersion": "1.0"},
         "threatInfo": {
@@ -1047,7 +1046,7 @@ def analyze(url):
     # ===== Malware crawling + DOM render (opcional) =====
     if enable_mal and (time.perf_counter() - overall_start) < (overall_budget - 12):
         try:
-            mal = scan_site_malware(r.url, max_pages=40, per_url_budget=0.15)
+            mal = scan_site_malware(r.url, max_pages=80, per_url_budget=0.6)
         except Exception as _e:
             mal = {"infected": None, "urls": [], "summary": {}, "error": str(_e)}
         report["malware_scan"] = mal
@@ -1333,18 +1332,25 @@ def print_report(rid):
         def li(items): return "".join("<li>%s</li>" % esc(i) for i in items if i)
 
         def list_vuln_items(vlist, max_items=10):
-            if not vlist: return "<li>—</li>"
+            if not vlist:
+                return "<li>—</li>"
             items = []
             for v in vlist[:max_items]:
                 title = v.get("title") or "Vulnerabilidad"
                 cve = (v.get("cve") or [""])[0] if isinstance(v.get("cve"), list) else (v.get("cve") or "")
-                cvss = v.get("cvss") or ""
+                cvss_raw = v.get("cvss")
+         
+                if isinstance(cvss_raw, dict):
+                    cvss = cvss_raw.get("score") or cvss_raw.get("vectorString") or ""
+                else:
+                    cvss = cvss_raw or ""
                 badge = (" <span class='chip chip-warn'>CVE %s</span>" % esc(cve)) if cve else ""
                 score = (" <span class='muted'>(CVSS %s)</span>" % esc(cvss)) if cvss else ""
                 items.append("<li>%s%s%s</li>" % (esc(title), badge, score))
             if len(vlist) > max_items:
                 items.append("<li>… y %d más</li>" % (len(vlist)-max_items))
             return "".join(items)
+
 
         if mixed:
             rows = "".join("<tr><td>%s</td></tr>" % esc(u) for u in mixed[:20])
@@ -1709,7 +1715,7 @@ def print_report(rid):
     </div>
 
    
-%s  
+    %s  
 
     <!-- BLOQUES TECNICOS -->
     <div class="grid cols-3">
