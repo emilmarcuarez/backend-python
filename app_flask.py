@@ -1714,7 +1714,7 @@ def print_report(rid):
         <div class="kv"><b>Infección detectada:</b> %s</div>
         <h3 style="margin:6mm 0 2mm 0;font-size:14px">URLss sospechosas</h3>
         %s
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Evidencias (snippets)</h3>
+        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Evidenciaas (snippets)</h3>
         %s
     </div>
     </div>
