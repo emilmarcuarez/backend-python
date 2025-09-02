@@ -1263,6 +1263,9 @@ def print_report(rid):
     <!-- PORTADA -->
     <div class="page cover no-break">
       <div class="kicker">IDEI Auditor</div>
+      <div style="text-align:center; margin-bottom:20mm;">
+        <img src="ideidev.png" alt="Logo" style="max-width:300px; height:auto;" />
+      </div>
       <h1>Escáner de seguridad WordPress</h1>
       <h2>Resumen ejecutivo del Sitio Analizado</h2>
       <div class="band">Reporte #%d</div>
