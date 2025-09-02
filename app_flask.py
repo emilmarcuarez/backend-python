@@ -1708,17 +1708,8 @@ def print_report(rid):
       </div>
     </div>
 
-    <div class="section no-break">
-    <div class="title" style="%s">Detección de Malware (crawling + DOM)</div>
-    <div class="body">
-        <div class="kv"><b>Infección detectada:</b> %s</div>
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">URLss sospechosas</h3>
-        %s
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Evidenciaas (snippets)</h3>
-        %s
-    </div>
-    </div>
-
+   
+%s  
 
     <!-- BLOQUES TECNICOS -->
     <div class="grid cols-3">
@@ -1904,6 +1895,7 @@ def print_report(rid):
 </div>
 
 
+
     <div class="section no-break">
       <div class="title">Acciones sugeridas</div>
       <div class="body">%s</div>
@@ -1959,6 +1951,7 @@ def print_report(rid):
             esc(str(tls.get("days_to_expiry")) if tls.get("days_to_expiry") is not None else "—"),
             score_val,
 
+alert_html,
             # bloques técnicos
             esc(server_fp.get("vendor") or "—"),
             esc(server_fp.get("version") or "—"),
