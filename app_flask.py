@@ -80,7 +80,8 @@ app = Flask(__name__)
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
-    "https://analisis.ideidev.com"
+    "https://analisis.ideidev.com",
+    "https://proper-arline-ideidev-d91f3d2e.koyeb.app"  # Agregar el dominio de Koyeb
 ]
 
 @app.before_request
@@ -88,24 +89,37 @@ def _cors_preflight():
     if request.method == "OPTIONS":
         origin = request.headers.get("Origin", "*")
         resp = make_response(("", 204))
-        resp.headers["Access-Control-Allow-Origin"] = origin if origin in ALLOWED_ORIGINS else "null"
+        # Permitir cualquier origen que termine en .koyeb.app o sea de la lista
+        if (origin in ALLOWED_ORIGINS or 
+            origin.endswith('.koyeb.app') or 
+            origin.endswith('.ideidev.com') or
+            origin.startswith('http://localhost')):
+            resp.headers["Access-Control-Allow-Origin"] = origin
+        else:
+            resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers["Vary"] = "Origin"
-        resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = request.headers.get("Access-Control-Request-Headers", "Content-Type, Authorization")
+        resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS,PUT,DELETE"
+        resp.headers["Access-Control-Allow-Headers"] = request.headers.get("Access-Control-Request-Headers", "Content-Type, Authorization, X-Requested-With")
         resp.headers["Access-Control-Max-Age"] = "86400"
         return resp
 
 @app.after_request
 def _cors_headers(resp):
     origin = request.headers.get("Origin")
-    if origin and (origin in ALLOWED_ORIGINS):
+    # Permitir cualquier origen que termine en .koyeb.app o sea de la lista
+    if (origin and (origin in ALLOWED_ORIGINS or 
+                   origin.endswith('.koyeb.app') or 
+                   origin.endswith('.ideidev.com') or
+                   origin.startswith('http://localhost'))):
         resp.headers["Access-Control-Allow-Origin"] = origin
         resp.headers["Vary"] = "Origin"
+    else:
+        resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
 
 CORS(
     app,
-    resources={r"/*": {"origins": ALLOWED_ORIGINS}},
+    resources={r"/*": {"origins": "*"}},  # Permitir todos los orígenes
     supports_credentials=False, 
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
@@ -121,8 +135,8 @@ SECURITY_HEADERS = [
 
 
 # Timeouts optimizados para respuestas más rápidas
-CONNECT_TIMEOUT = 3
-READ_TIMEOUT = 8
+CONNECT_TIMEOUT = 2
+READ_TIMEOUT = 5
 REQ_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
 
 def make_session():
@@ -1043,7 +1057,7 @@ def seo_structure_from_html(html_text: str) -> dict:
 def analyze(url, assume_wp=False, **kwargs):
     overall_start = time.perf_counter()
     # Presupuesto total optimizado para respuestas más rápidas
-    overall_budget = float(os.getenv("ANALYZE_BUDGET_SECONDS", "20"))
+    overall_budget = float(os.getenv("ANALYZE_BUDGET_SECONDS", "15"))  # Reducido de 20 a 15
     # Flags para habilitar checks pesados opcionalmente
     enable_psi = os.getenv("ENABLE_PSI", "0") == "1"
     enable_ux  = os.getenv("ENABLE_UX", "0") == "1"
@@ -1203,9 +1217,9 @@ def analyze(url, assume_wp=False, **kwargs):
     report["performance"]["psi_score_desktop"] = pd.get("perf_score")
 
     # ===== Malware crawling + DOM render (opcional) =====
-    if enable_mal and (time.perf_counter() - overall_start) < (overall_budget - 12):
+    if enable_mal and (time.perf_counter() - overall_start) < (overall_budget - 8):  # Reducido de 12 a 8
         try:
-            mal = scan_site_malware(r.url, max_pages=60, per_url_budget=0.2)  # Más páginas y tiempo
+            mal = scan_site_malware(r.url, max_pages=30, per_url_budget=0.1)  # Reducido páginas y tiempo
         except Exception as _e:
             mal = {"infected": None, "urls": [], "summary": {}, "error": str(_e)}
         report["malware_scan"] = mal
@@ -1374,6 +1388,15 @@ def health_check():
     """Endpoint simple para health checks de Koyeb"""
     return jsonify({"status": "healthy", "timestamp": datetime.utcnow().isoformat()})
 
+@app.route("/test-cors", methods=["GET", "POST", "OPTIONS"])
+def test_cors():
+    """Endpoint de prueba para verificar CORS"""
+    return jsonify({
+        "status": "CORS working", 
+        "timestamp": datetime.utcnow().isoformat(),
+        "origin": request.headers.get("Origin", "unknown")
+    })
+
 @app.route("/scan", methods=["POST"])
 def scan():
     data = request.get_json(force=True, silent=True) or {}
@@ -1389,7 +1412,7 @@ def scan():
 
 @app.route("/scan-save", methods=["POST"])
 @cross_origin(
-  origins=["https://analisis.ideidev.com"],
+  origins="*",  # Permitir todos los orígenes
   methods=["POST", "OPTIONS"],
   allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
   max_age=86400,
@@ -1403,6 +1426,9 @@ def scan_save():
     assume_wp = bool(data.get("assume_wp") or (request.args.get("assume_wp") == "1"))
 
     try:
+        # Configurar timeout más corto para evitar 524
+        os.environ["ANALYZE_BUDGET_SECONDS"] = "12"  # Timeout más corto
+        
         # Análisis síncrono - devuelve respuesta inmediata
         rep = analyze(url, assume_wp=assume_wp)
         
