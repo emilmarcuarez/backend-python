@@ -1021,15 +1021,16 @@ def analyze(url):
     
     # PageSpeed (core web vitals)
     if (time.perf_counter() - overall_start) < (overall_budget - 15):
-        psi_m = pagespeed_fetch(r.url, "mobile")
-        psi_d = pagespeed_fetch(r.url, "desktop")
-        report["pagespeed"] = {"mobile": psi_m, "desktop": psi_d}
+        _psi_m = pagespeed_fetch(r.url, "mobile")
+        _psi_d = pagespeed_fetch(r.url, "desktop")
+        report["pagespeed"] = {"mobile": _psi_m, "desktop": _psi_d}
     else:
         report["pagespeed"] = {"mobile": {"error": "budget"}, "desktop": {"error": "budget"}}
 
     # mete C WV resumidas en performance para que tu UI/impresión lo tenga fácil
-    pm = (psi_m.get("metrics") or {})
-    pd = (psi_d.get("metrics") or {})
+    psi_all = report.get("pagespeed") or {}
+    pm = ((psi_all.get("mobile") or {}).get("metrics") or {})
+    pd = ((psi_all.get("desktop") or {}).get("metrics") or {})
     report["performance"]["lcp"] = pm.get("lcp") or pd.get("lcp")
     report["performance"]["cls"] = pm.get("cls") or pd.get("cls")
     report["performance"]["inp"] = pm.get("inp") or pd.get("inp")
