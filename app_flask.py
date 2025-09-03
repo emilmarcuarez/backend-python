@@ -1173,18 +1173,20 @@ def wp_heuristics(html_text):
         mv = re.search(r"wordpress\s*([\d\.]+)", mg.group(1), re.I)
         if mv:
             data["version"] = mv.group(1)
-    # Detectar temas - múltiples patrones
+    # Detectar temas - patrones específicos para WordPress
     theme_patterns = [
         r'/wp-content/themes/([a-zA-Z0-9_\-]+)/',
         r'wp-content/themes/([a-zA-Z0-9_\-]+)',
-        r'theme["\']?\s*:\s*["\']([^"\']+)["\']',
-        r'get_template_directory[^"]*["\']([^"\']+)["\']',
-        r'stylesheet[^"]*["\']([^"\']+)["\']'
+        r'get_template_directory[^"]*["\']([^"\']+)["\']'
     ]
     for pattern in theme_patterns:
         for m in re.finditer(pattern, html_text, re.I):
             name = m.group(1).strip()
-            if name and name not in data["theme_candidates"] and len(name) > 2:
+            # Filtrar nombres válidos de temas
+            if (name and name not in data["theme_candidates"] and 
+                len(name) > 2 and len(name) < 50 and
+                re.match(r'^[a-zA-Z0-9_\-]+$', name) and
+                not any(char in name for char in ['<', '>', '=', '(', ')', '{', '}', ';', ':', '"', "'"])):
                 data["theme_candidates"].append(name)
     
     # Detectar plugins - múltiples patrones
