@@ -3162,65 +3162,48 @@ def print_report(rid):
             # para que aparezca en su sección "Contenido mixto" correspondiente
             # mantenemos el orden y no agregamos variables extra
 
-            # archivos/dirs
-            open_dirs_html,
-            backups_html,
-            ("Sí" if license_exposed else "No"),
-            ("Sí" if wp_config_exposed else "No"),
-
-            # performance
-            esc(str(perf.get("ttfb_ms") or "—")),
-            esc(str(perf.get("gzip_br") or "—")),
-            esc(str(perf.get("html_size_kb") or "—")),
-            esc(str(perf.get("cache_control") or "—")),
-
-            # privacidad
-            ("Sí" if ((privacy.get("tracking") or {}).get("ga")) else "No"),
-            ("Sí" if ((privacy.get("tracking") or {}).get("gtm")) else "No"),
-            ("Sí" if ((privacy.get("tracking") or {}).get("fbp")) else "No"),
-            ("Sí" if privacy.get("mailto_found") else "No"),
-
-            # SEO básico + robots
-            esc(seo.get("title") or "—"),
-            esc(seo.get("meta_description") or "—"),
-            esc(seo.get("robots_meta") or "—"),
-            robots_html,
-
-            # Estructura SEO
-            seo_struct_table, seo_struct_issues_html,
-
-            # WordPress
+            # SECCIÓN WORDPRESS
             wp_version,
             wp_latest,
             wp_outdated,
-            plugins_list_html,
             themes_list_html,
-
-            # Robots.txt y Sitemap
+            plugins_list_html,
             yn(exposed.get("robots_txt")),
             yn(exposed.get("sitemap_xml")),
             robots_html,
-
-            # Enlaces y Estructura
             yn(seo.get("internal_links")),
             yn(seo.get("external_links")),
             yn(seo.get("broken_links")),
             yn(seo.get("nofollow_links")),
             yn(seo.get("dofollow_links")),
             yn(seo.get("mailto_found")),
+            mixed_html,
+            open_dirs_html,
+            backups_html,
+            ("Sí" if license_exposed else "No"),
+            ("Sí" if wp_config_exposed else "No"),
+            esc(str(perf.get("ttfb_ms") or "—")),
+            esc(str(perf.get("gzip_br") or "—")),
+            esc(str(perf.get("html_size_kb") or "—")),
+            esc(str(perf.get("cache_control") or "—")),
+            ("Sí" if ((privacy.get("tracking") or {}).get("ga")) else "No"),
+            ("Sí" if ((privacy.get("tracking") or {}).get("gtm")) else "No"),
+            ("Sí" if ((privacy.get("tracking") or {}).get("fbp")) else "No"),
+            ("Sí" if privacy.get("mailto_found") else "No"),
 
-            # *** SECCIÓN CONTENIDO MIXTO (ÚNICO LUGAR DONDE VA) ***
-            # mixed_html,  # <-- Movido a la sección de Análisis de Contenido
-
-            # Meta Tags y Schema
+            # SECCIÓN SEO
+            esc(seo.get("title") or "—"),
+            esc(seo.get("meta_description") or "—"),
+            esc(seo.get("robots_meta") or "—"),
+            robots_html,
+            seo_struct_table, 
+            seo_struct_issues_html,
             yn(seo.get("canonical")),
             yn(seo.get("open_graph")),
             yn(seo.get("twitter_card")),
             yn(seo.get("schema_org")),
             yn(seo.get("hreflang")),
             yn(seo.get("alt_text_images")),
-
-            # APIs/Integraciones
             yn(admin_ajax_open),
             yn(wp_cron_accessible),
             yn(oembed_enabled),
@@ -3232,7 +3215,6 @@ def print_report(rid):
 
             # Análisis de Contenido
             risk_html,
-            mixed_html,  # <-- Contenido mixto aquí
             casino_html,
             spam_html,
             malicious_html,
