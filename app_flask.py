@@ -3213,17 +3213,6 @@ def print_report(rid):
             yn(acf_rest in (True, 200, 401, 403)),
             esc(jquery_version or "—"),
 
-            # Análisis de Contenido
-            risk_html,
-            casino_html,
-            spam_html,
-            malicious_html,
-            links_html,
-            scripts_html,
-            images_html,
-            resources_html,
-            hidden_html,
-
             # PageSpeed (CWV)
             str(lcp_ms),
             str(cls),
@@ -3263,6 +3252,17 @@ def print_report(rid):
             uh_details_html,
             pt_label,
             pt_details_html,
+
+            # Análisis de Contenido Sospechoso (después de APIs de Seguridad)
+            risk_html,
+            casino_html,
+            spam_html,
+            malicious_html,
+            links_html,
+            scripts_html,
+            images_html,
+            resources_html,
+            hidden_html,
 
             # Acciones
             acciones_html,
