@@ -1916,8 +1916,9 @@ def delete_report(rid):
     finally:
         db.close()
 
-@app.route("/reports/<int:rid>/print", methods=["GET"])
 
+
+@app.route("/reports/<int:rid>/print", methods=["GET"])
 def print_report(rid):
     db = SessionLocal()
     try:
@@ -1996,7 +1997,7 @@ def print_report(rid):
 
         plugins_str = " · ".join(plugins_list) if plugins_list else "—"
         themes_str = ", ".join(theme_candidates) if theme_candidates else "—"
-        
+
         # HTML para plugins y temas
         if not plugins_list:
             plugins_list_html = "<span class='ok'>✔ Sin plugins detectados</span>"
@@ -2005,7 +2006,7 @@ def print_report(rid):
             for plugin in plugins_list:
                 plugins_items.append(f"<li><b>{esc(plugin)}</b></li>")
             plugins_list_html = f"<ul class='list'>{''.join(plugins_items)}</ul>"
-        
+
         if not theme_candidates:
             themes_list_html = "<span class='ok'>✔ Sin temas detectados</span>"
         else:
@@ -2211,7 +2212,7 @@ def print_report(rid):
         gsb_unsafe = _gsb.get("unsafe")
         gsb_matches = _gsb.get("matches_count", 0)
         gsb_details = _gsb.get("threat_details", [])
-        
+
         if not gsb_enabled:
             gsb_label = "No configurado"
             gsb_details_html = f"<div class='muted'>API key no configurada: {_gsb.get('details', 'N/A')}</div>"
@@ -2236,7 +2237,7 @@ def print_report(rid):
         vt_susp = _vt.get("suspicious", 0)
         vt_detailed = _vt.get("detailed_stats", {})
         vt_engines = _vt.get("engine_detections", [])
-        
+
         if not vt_enabled:
             vt_label = "No configurado"
             vt_details_html = f"<div class='muted'>API key no configurada: {_vt.get('details', 'N/A')}</div>"
@@ -2260,7 +2261,7 @@ def print_report(rid):
         uh_listed = _uh.get("listed")
         uh_count = _uh.get("urls_count", 0)
         uh_urls = _uh.get("malicious_urls", [])
-        
+
         if uh_listed is True:
             uh_label = f"⚠️ LISTADO ({uh_count} URLs)"
             uh_details_html = "<ul class='list'>"
@@ -2281,7 +2282,7 @@ def print_report(rid):
         pt_feed = _pt.get("feed_available", False)
         pt_total = _pt.get("total_entries", 0)
         pt_details = _pt.get("phish_details")
-        
+
         if pt_listed is True:
             pt_label = "⚠️ PHISHING DETECTADO"
             pt_details_html = f"<div class='kv'><b>Phish ID:</b> {esc(pt_details.get('phish_id', 'N/A') if pt_details else 'N/A')}</div>"
@@ -2320,7 +2321,7 @@ def print_report(rid):
 
         # ===== Análisis UX/UI Detallado =====
         ux_analysis = rep.get("ux_analysis") or {}
-        
+
         # Imágenes rotas
         broken_images = ux_analysis.get("broken_images", [])
         broken_images_html = "<span class='ok'>✔ Sin imágenes rotas</span>"
@@ -2329,7 +2330,7 @@ def print_report(rid):
             for img in broken_images:
                 broken_items.append(f"<li><b>{esc(img.get('url', ''))}</b> - {esc(img.get('error', ''))}</li>")
             broken_images_html = f"<ul class='list'>{''.join(broken_items)}</ul>"
-        
+
         # Alt text faltante
         missing_alt = ux_analysis.get("missing_alt_text", [])
         missing_alt_html = "<span class='ok'>✔ Todas las imágenes tienen alt text</span>"
@@ -2338,7 +2339,7 @@ def print_report(rid):
             for img in missing_alt:
                 alt_items.append(f"<li><b>{esc(img.get('url', ''))}</b> - {esc(img.get('issue', ''))}</li>")
             missing_alt_html = f"<ul class='list'>{''.join(alt_items)}</ul>"
-        
+
         # Formularios
         forms_analysis = ux_analysis.get("forms_analysis", [])
         forms_html = "<span class='ok'>✔ Sin problemas en formularios</span>"
@@ -2349,7 +2350,7 @@ def print_report(rid):
                 for issue in form.get("issues", []):
                     form_items.append(f"<li class='context-item'>{esc(issue)}</li>")
             forms_html = f"<ul class='list'>{''.join(form_items)}</ul>"
-        
+
         # Botones
         buttons_analysis = ux_analysis.get("buttons_analysis", [])
         buttons_html = "<span class='ok'>✔ Sin problemas en botones</span>"
@@ -2360,7 +2361,7 @@ def print_report(rid):
                 for issue in button.get("issues", []):
                     button_items.append(f"<li class='context-item'>{esc(issue)}</li>")
             buttons_html = f"<ul class='list'>{''.join(button_items)}</ul>"
-        
+
         # Enlaces
         links_analysis = ux_analysis.get("links_analysis", [])
         ux_links_html = "<span class='ok'>✔ Sin problemas en enlaces</span>"
@@ -2371,7 +2372,7 @@ def print_report(rid):
                 for issue in link.get("issues", []):
                     link_items.append(f"<li class='context-item'>{esc(issue)}</li>")
             ux_links_html = f"<ul class='list'>{''.join(link_items)}</ul>"
-        
+
         # Media
         media_issues = ux_analysis.get("media_issues", [])
         media_html = "<span class='ok'>✔ Sin problemas en media</span>"
@@ -2380,7 +2381,7 @@ def print_report(rid):
             for media in media_issues:
                 media_items.append(f"<li><b>{esc(media.get('type', ''))}</b> - {esc(media.get('issue', ''))}</li>")
             media_html = f"<ul class='list'>{''.join(media_items)}</ul>"
-        
+
         # Accesibilidad
         accessibility_issues = ux_analysis.get("accessibility_issues", [])
         accessibility_html = "<span class='ok'>✔ Sin problemas de accesibilidad</span>"
@@ -2389,7 +2390,7 @@ def print_report(rid):
             for acc in accessibility_issues:
                 acc_items.append(f"<li><b>{esc(acc.get('issue', ''))}</b> - {acc.get('count', 0)} ocurrencias</li>")
             accessibility_html = f"<ul class='list'>{''.join(acc_items)}</ul>"
-        
+
         # Rendimiento
         performance_issues = ux_analysis.get("performance_issues", [])
         performance_html = "<span class='ok'>✔ Sin problemas de rendimiento</span>"
@@ -2404,7 +2405,7 @@ def print_report(rid):
         infected = mal.get("infected", False)
         severity = mal.get("severity", "unknown")
         counts = (mal.get("summary") or {}).get("counts", {})
-        
+
         # Label de infección más detallado
         if infected:
             infected_label = f"⚠️ SÍ ({severity.upper()})"
@@ -2421,14 +2422,14 @@ def print_report(rid):
         # Evidencias más detalladas
         snips = []
         malware_urls = mal.get("urls", [])
-        
+
         for e in malware_urls[:15]:  # Más URLs
             url = e.get('url', '')
             findings_dom = e.get('findings_dom', [])
             findings_raw = e.get('findings_raw', [])
             external_scripts = e.get('external_scripts', [])
             snippets = e.get('snippets', [])
-            
+
             # Agregar información de findings
             if findings_dom or findings_raw:
                 findings_text = f"<div class='kv'><b>Findings DOM:</b> {', '.join(findings_dom[:5])}</div>"
@@ -2436,11 +2437,11 @@ def print_report(rid):
                 if external_scripts:
                     findings_text += f"<div class='kv'><b>Scripts externos:</b> {len(external_scripts)} detectados</div>"
                 snips.append(f"<div class='malware-entry'><b>{esc(url)}</b>{findings_text}</div>")
-            
+
             # Agregar snippets
             for s in snippets[:3]:  # Más snippets por URL
                 snips.append(f"<div class='snippet-entry'><b>{esc(url)}</b><pre class='code-snippet'>{esc(s[:800])}</pre></div>")
-        
+
         # Estadísticas de malware
         stats_html = f"""
         <div class='malware-stats'>
@@ -2454,7 +2455,7 @@ def print_report(rid):
             <div class='kv'><b>Meta refresh:</b> {counts.get('meta', 0)}</div>
         </div>
         """
-        
+
         evid_html = stats_html + ("".join(snips) if snips else "<span class='ok'>✔ Sin evidencias capturadas</span>")
 
         # ===== Alerta crítica (roja) cuando hay infección o reputación mala =====
@@ -2491,7 +2492,7 @@ def print_report(rid):
 <title>Escáner de seguridad WordPress · Reporte #%d</title>
 <style>
   :root{
-    
+
     --bg:#f5f7fb; --paper:#ffffff; --ink:#0b1220; --muted:#6a768c;
     --line:#e6eaf2; --brand:#0a5bb7; --brand2:#0fa878; --accent:#111827;
     --ok:#16a34a; --warn:#b45309; --bad:#b91c1c;
@@ -2506,7 +2507,7 @@ def print_report(rid):
   body{ background:var(--bg) }
   .wrap{ max-width:960px; margin:0 auto; padding:0 8mm }
   .page{ page-break-after:always; }
-  
+
 .page .cover .page .no-break {
   page-break-inside: avoid;
   display: flex;
@@ -2575,7 +2576,7 @@ def print_report(rid):
   /* Footer con numeración */
   .footer{ text-align:center; color:var(--muted); font-size:12px; margin:6mm 0 10mm }
   .pnum:after{ counter-increment: page; content: counter(page) }
-  
+
   .alert-bad{
   background: linear-gradient(90deg, #fee2e2, #fecaca);
   border: 1px solid #fecaca;
@@ -2586,7 +2587,7 @@ def print_report(rid):
   font-weight: 700;
     }
     .alert-title{ font-size: 15px; margin-bottom: 2mm }
-    
+
     /* Estilos adicionales para malware y evidencias */
     .malware-entry {
       background: #fef3c7;
@@ -2596,7 +2597,7 @@ def print_report(rid):
       border-radius: 8px;
       font-size: 13px;
     }
-    
+
     .snippet-entry {
       background: #f3f4f6;
       border: 1px solid #d1d5db;
@@ -2605,7 +2606,7 @@ def print_report(rid):
       border-radius: 8px;
       font-size: 13px;
     }
-    
+
     .code-snippet {
       background: #1f2937;
       color: #f9fafb;
@@ -2618,7 +2619,7 @@ def print_report(rid):
       white-space: pre-wrap;
       word-break: break-all;
     }
-    
+
     .malware-stats {
       background: #ecfdf5;
       border: 1px solid #10b981;
@@ -2626,7 +2627,7 @@ def print_report(rid):
       border-radius: 8px;
       margin: 8px 0;
     }
-    
+
     .api-details {
       background: #f0f9ff;
       border: 1px solid #0ea5e9;
@@ -2635,7 +2636,7 @@ def print_report(rid):
       margin: 4px 0;
       font-size: 12px;
     }
-    
+
     .threat-detail {
       background: #fef2f2;
       border: 1px solid #ef4444;
@@ -2644,7 +2645,7 @@ def print_report(rid):
       margin: 2px 0;
       font-size: 12px;
     }
-    
+
     .engine-detection {
       background: #fef3c7;
       border: 1px solid #f59e0b;
@@ -2653,7 +2654,7 @@ def print_report(rid):
       margin: 2px 0;
       font-size: 11px;
     }
-    
+
     .context-item {
       background: #f8fafc;
       border-left: 3px solid #3b82f6;
@@ -2662,7 +2663,7 @@ def print_report(rid):
       font-size: 11px;
       font-style: italic;
     }
-    
+
     .script-snippet {
       background: #1f2937;
       color: #f9fafb;
@@ -2676,7 +2677,7 @@ def print_report(rid):
       white-space: pre-wrap;
       word-break: break-all;
     }
-    
+
     .suspicious-resource {
       background: #fef2f2;
       border: 1px solid #ef4444;
@@ -2685,7 +2686,7 @@ def print_report(rid):
       margin: 2px 0;
       font-size: 12px;
     }
-    
+
     .hidden-element {
       background: #f3f4f6;
       border: 1px solid #6b7280;
@@ -2694,7 +2695,7 @@ def print_report(rid):
       margin: 2px 0;
       font-size: 12px;
     }
-    
+
     /* Estilos para secciones principales */
     .main-section {
       page-break-before: always;
@@ -2702,7 +2703,7 @@ def print_report(rid):
       border-top: 3px solid #3b82f6;
       padding-top: 10mm;
     }
-    
+
     .main-section-title {
       background: linear-gradient(135deg, #3b82f6, #1d4ed8);
       color: white;
@@ -2714,13 +2715,13 @@ def print_report(rid):
       margin-bottom: 15mm;
       box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     }
-    
+
     .subsection {
       margin: 8mm 0;
       border-left: 4px solid #e5e7eb;
       padding-left: 8mm;
     }
-    
+
     .subsection-title {
       color: #374151;
       font-size: 18px;
@@ -2780,7 +2781,7 @@ def print_report(rid):
       </div>
     </div>
 
-   
+
     %s  
 
     <!-- BLOQUES TECNICOS -->
@@ -2831,10 +2832,10 @@ def print_report(rid):
           <div class="kv"><b>Versión actual:</b> %s</div>
           <div class="kv"><b>Última versión disponible:</b> %s</div>
           <div class="kv"><b>Core desactualizado:</b> %s</div>
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎨 Tema(s) detectado(s)</h3>
           %s
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔌 Plugin(s) detectado(s)</h3>
           %s
         </div>
@@ -2902,7 +2903,7 @@ def print_report(rid):
     <!-- SECCIÓN SEO -->
     <div class="main-section">
       <div class="main-section-title">📈 SECCIÓN SEO</div>
-      
+
       <div class="subsection">
         <div class="subsection-title">SEO Básico</div>
         <div class="body">
@@ -2944,12 +2945,42 @@ def print_report(rid):
 
 
 
+      <div class="subsection">
+        <div class="subsection-title">Análisis de Contenido Sospechoso</div>
+      <div class="body">
+          <div class="kv"><b>Nivel de Riesgo:</b> %s</div>
 
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎰 Contenido de Casino/Juegos</h3>
+          %s
+
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📧 Contenido Spam</h3>
+          %s
+
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">⚠️ Patrones Maliciosos</h3>
+          %s
+
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔗 Enlaces Sospechosos</h3>
+          %s
+
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">💻 Scripts Sospechosos</h3>
+          %s
+
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🖼️ Imágenes Sospechosas</h3>
+          %s
+
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🌐 Recursos Externos</h3>
+          %s
+
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">👁️ Elementos Ocultos</h3>
+          %s
+        </div>
+      </div>
+    </div>
 
     <!-- SECCIÓN UI/UX -->
     <div class="main-section">
       <div class="main-section-title">🎨 SECCIÓN UI/UX</div>
-      
+
       <div class="subsection">
         <div class="subsection-title">Core Web Vitals (PageSpeed)</div>
       <div class="body">
@@ -2966,25 +2997,25 @@ def print_report(rid):
         <div class="body">
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🖼️ Imágenes Rotas</h3>
           %s
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">📝 Alt Text Faltante</h3>
           %s
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">📋 Formularios</h3>
           %s
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔘 Botones</h3>
           %s
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔗 Enlaces</h3>
           %s
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎥 Media</h3>
           %s
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">♿ Accesibilidad</h3>
           %s
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">⚡ Rendimiento</h3>
           %s
         </div>
@@ -3020,7 +3051,7 @@ def print_report(rid):
     <!-- SECCIÓN SEGURIDAD -->
     <div class="main-section">
       <div class="main-section-title">🛡️ SECCIÓN SEGURIDAD</div>
-      
+
       <div class="subsection">
         <div class="subsection-title">Detección de Malware (crawling + DOM)</div>
   <div class="body">
@@ -3039,17 +3070,17 @@ def print_report(rid):
           <div class="kv"><b>Estado:</b> %s</div>
           <div class="kv"><b>Detalles:</b></div>
           %s
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🛡️ VirusTotal</h3>
           <div class="kv"><b>Estado:</b> %s</div>
           <div class="kv"><b>Detalles:</b></div>
           %s
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🚨 URLHaus</h3>
           <div class="kv"><b>Estado:</b> %s</div>
           <div class="kv"><b>Detalles:</b></div>
           %s
-          
+
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎣 PhishTank</h3>
           <div class="kv"><b>Estado:</b> %s</div>
           <div class="kv"><b>Detalles:</b></div>
@@ -3057,36 +3088,7 @@ def print_report(rid):
         </div>
       </div>
 
-      <div class="subsection">
-        <div class="subsection-title">Análisis de Contenido Sospechoso</div>
-        <div class="body">
-          <div class="kv"><b>Nivel de Riesgo:</b> %s</div>
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎰 Contenido de Casino/Juegos</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📧 Contenido Spam</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">⚠️ Patrones Maliciosos</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔗 Enlaces Sospechosos</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">💻 Scripts Sospechosos</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🖼️ Imágenes Sospechosas</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🌐 Recursos Externos</h3>
-          %s
-          
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">👁️ Elementos Ocultos</h3>
-          %s
-        </div>
-      </div>
+
 
     <div class="section no-break">
       <div class="title">Acciones sugeridas</div>
@@ -3099,7 +3101,8 @@ def print_report(rid):
     </div>
 
     <div class="footer">IDEI Auditor · %s · <span class="pnum"></span></div>
-  </div>
+  <!-- filler %s -->
+</div>
 
   <script>
     (function autoPrint() {
@@ -3143,7 +3146,7 @@ def print_report(rid):
             esc(str(tls.get("days_to_expiry")) if tls.get("days_to_expiry") is not None else "—"),
             score_val,
 
-alert_html,
+            alert_html,
             # bloques técnicos
             esc(server_fp.get("vendor") or "—"),
             esc(server_fp.get("version") or "—"),
@@ -3162,10 +3165,9 @@ alert_html,
             headers_html,
             cookies_html,
 
-
-
-            # contenido mixto
-            mixed_html,
+            # *** OJO: AQUÍ YA NO INYECTAMOS mixed_html ***
+            # para que SOLO aparezca en su sección "Contenido mixto" más abajo
+            # mantenemos el orden y no agregamos variables extra
 
             # archivos/dirs
             open_dirs_html,
@@ -3214,6 +3216,9 @@ alert_html,
             yn(seo.get("dofollow_links")),
             yn(seo.get("mailto_found")),
 
+            # *** SECCIÓN CONTENIDO MIXTO (ÚNICO LUGAR DONDE VA) ***
+            mixed_html,
+
             # Meta Tags y Schema
             yn(seo.get("canonical")),
             yn(seo.get("open_graph")),
@@ -3234,7 +3239,7 @@ alert_html,
 
             # Análisis de Contenido
             risk_html,
-            mixed_html,
+            "" ,  # <-- NO duplicar mixed_html aquí
             casino_html,
             spam_html,
             malicious_html,
@@ -3243,16 +3248,6 @@ alert_html,
             images_html,
             resources_html,
             hidden_html,
-
-            # Seguridad / Malware (labels y nums)
-            gsb_label,
-            gsb_details_html,
-            vt_label,
-            vt_details_html,
-            uh_label,
-            uh_details_html,
-            pt_label,
-            pt_details_html,
 
             # PageSpeed (CWV)
             str(lcp_ms),
@@ -3283,10 +3278,20 @@ alert_html,
             infected_label,
             urls_html,
             evid_html,
-            
+
+            # Seguridad / Malware (labels y nums)
+            gsb_label,
+            gsb_details_html,
+            vt_label,
+            vt_details_html,
+            uh_label,
+            uh_details_html,
+            pt_label,
+            pt_details_html,
+
             # Acciones
             acciones_html,
-            
+
             # Anexo + footer
             html.escape(json.dumps(rep, ensure_ascii=False, indent=2)),
             esc(url)
@@ -3295,6 +3300,7 @@ alert_html,
         return Response(html_out, mimetype="text/html; charset=utf-8")
     finally:
         db.close()
+
 
 
 
