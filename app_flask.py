@@ -2754,7 +2754,7 @@ def print_report(rid):
 
 
 
-    <!-- RESUMEN -->
+        <!-- RESUMEN TÉCNICO -->
     <div class="section no-break">
       <div class="title">Resumen técnico</div>
       <div class="body">
@@ -2781,10 +2781,9 @@ def print_report(rid):
       </div>
     </div>
 
-
     %s  
 
-    <!-- BLOQUES TECNICOS -->
+    <!-- INFORMACIÓN TÉCNICA -->
     <div class="grid cols-3">
       <div class="section">
         <div class="title">Servidor / CDN / WAF</div>
@@ -2825,17 +2824,22 @@ def print_report(rid):
         <div class="title">Cookies</div>
         <div class="body">%s</div>
       </div>
+    </div>
 
+    <!-- SECCIÓN WORDPRESS -->
+    <div class="main-section">
+      <div class="main-section-title">🔧 SECCIÓN WORDPRESS</div>
+      
       <div class="subsection">
-        <div class="subsection-title">WordPress</div>
+        <div class="subsection-title">Información del Core</div>
         <div class="body">
           <div class="kv"><b>Versión actual:</b> %s</div>
           <div class="kv"><b>Última versión disponible:</b> %s</div>
           <div class="kv"><b>Core desactualizado:</b> %s</div>
-
+          
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎨 Tema(s) detectado(s)</h3>
           %s
-
+          
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔌 Plugin(s) detectado(s)</h3>
           %s
         </div>
@@ -2863,15 +2867,13 @@ def print_report(rid):
         </div>
       </div>
 
-      </div>
-
-      <div class="section">
-        <div class="title">Contenido mixto</div>
+      <div class="subsection">
+        <div class="subsection-title">Contenido Mixto</div>
         <div class="body">%s</div>
       </div>
 
-      <div class="section">
-        <div class="title">Archivos/Directorios</div>
+      <div class="subsection">
+        <div class="subsection-title">Archivos/Directorios</div>
         <div class="body">
           <div class="kv"><b>Listados activos:</b></div>%s
           <div class="kv" style="margin-top:3mm"><b>Backups/Logs expuestos:</b></div>%s
@@ -2880,8 +2882,8 @@ def print_report(rid):
         </div>
       </div>
 
-      <div class="section">
-        <div class="title">Performance</div>
+      <div class="subsection">
+        <div class="subsection-title">Performance</div>
         <div class="body">
           <div class="kv"><b>TTFB:</b> %s ms</div>
           <div class="kv"><b>Compresión:</b> %s</div>
@@ -2890,8 +2892,8 @@ def print_report(rid):
         </div>
       </div>
 
-      <div class="section">
-        <div class="title">Privacidad</div>
+      <div class="subsection">
+        <div class="subsection-title">Privacidad</div>
         <div class="body">
           <div class="kv"><b>GA:</b> %s</div>
           <div class="kv"><b>GTM:</b> %s</div>
@@ -2899,11 +2901,12 @@ def print_report(rid):
           <div class="kv"><b>mailto:</b> %s</div>
         </div>
       </div>
+    </div>
 
-    <!-- SECCIÓN SEO -->
+        <!-- SECCIÓN SEO -->
     <div class="main-section">
       <div class="main-section-title">📈 SECCIÓN SEO</div>
-
+      
       <div class="subsection">
         <div class="subsection-title">SEO Básico</div>
         <div class="body">
@@ -2923,118 +2926,6 @@ def print_report(rid):
         </div>
       </div>
 
-      <div class="section">
-        <div class="title">APIs/Integraciones</div>
-        <div class="body">
-          <div class="kv"><b>admin-ajax:</b> %s</div>
-          <div class="kv"><b>wp-cron.php:</b> %s</div>
-          <div class="kv"><b>oEmbed:</b> %s</div>
-          <div class="kv"><b>JWT:</b> %s</div>
-          <div class="kv"><b>GraphQL:</b> %s</div>
-          <div class="kv"><b>Woo REST:</b> %s</div>
-          <div class="kv"><b>ACF REST:</b> %s</div>
-          <div class="kv"><b>jQuery:</b> %s</div>
-        </div>
-      </div>
-    </div>
-
-
-
-    </div>
-
-
-
-
-      <div class="subsection">
-        <div class="subsection-title">Análisis de Contenido Sospechoso</div>
-      <div class="body">
-          <div class="kv"><b>Nivel de Riesgo:</b> %s</div>
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎰 Contenido de Casino/Juegos</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📧 Contenido Spam</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">⚠️ Patrones Maliciosos</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔗 Enlaces Sospechosos</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">💻 Scripts Sospechosos</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🖼️ Imágenes Sospechosas</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🌐 Recursos Externos</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">👁️ Elementos Ocultos</h3>
-          %s
-        </div>
-      </div>
-    </div>
-
-    <!-- SECCIÓN UI/UX -->
-    <div class="main-section">
-      <div class="main-section-title">🎨 SECCIÓN UI/UX</div>
-
-      <div class="subsection">
-        <div class="subsection-title">Core Web Vitals (PageSpeed)</div>
-      <div class="body">
-        <div class="kv"><b>LCP:</b> %s ms</div>
-        <div class="kv"><b>CLS:</b> %s</div>
-        <div class="kv"><b>INP:</b> %s ms</div>
-        <div class="kv"><b>Score (mobile):</b> %s</div>
-        <div class="kv"><b>Score (desktop):</b> %s</div>
-      </div>
-    </div>
-
-      <div class="subsection">
-        <div class="subsection-title">Análisis de UX/UI Detallado</div>
-        <div class="body">
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🖼️ Imágenes Rotas</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📝 Alt Text Faltante</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📋 Formularios</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔘 Botones</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔗 Enlaces</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎥 Media</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">♿ Accesibilidad</h3>
-          %s
-
-          <h3 style="margin:6mm 0 2mm 0;font-size:14px">⚡ Rendimiento</h3>
-          %s
-        </div>
-      </div>
-
-      <div class="subsection">
-        <div class="subsection-title">UX/UI y Accesibilidad</div>
-      <div class="body">
-        <div class="kv"><b>Violaciones WCAG (axe):</b> %s</div>
-        <div class="kv"><b>CrUX p75 LCP:</b> %s ms</div>
-        <div class="kv"><b>CrUX p75 INP:</b> %s ms</div>
-        <div class="kv"><b>CrUX p75 CLS:</b> %s</div>
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Heurísticas UX detectadas</h3>
-        %s
-        <h3 style="margin:6mm 0 2mm 0;font-size:14px">Recomendaciones</h3>
-        %s
-      </div>
-    </div>
-
       <div class="subsection">
         <div class="subsection-title">Meta Tags y Schema</div>
         <div class="body">
@@ -3046,22 +2937,95 @@ def print_report(rid):
           <div class="kv"><b>Alt text en imágenes:</b> %s</div>
         </div>
       </div>
-    </div>
-
-    <!-- SECCIÓN SEGURIDAD -->
-    <div class="main-section">
-      <div class="main-section-title">🛡️ SECCIÓN SEGURIDAD</div>
 
       <div class="subsection">
+        <div class="subsection-title">APIs/Integraciones</div>
+        <div class="body">
+          <div class="kv"><b>admin-ajax:</b> %s</div>
+          <div class="kv"><b>wp-cron.php:</b> %s</div>
+          <div class="kv"><b>oEmbed:</b> %s</div>
+          <div class="kv"><b>JWT:</b> %s</div>
+          <div class="kv"><b>GraphQL:</b> %s</div>
+          <div class="kv"><b>Woo REST:</b> %s</div>
+          <div class="kv"><b>ACF REST:</b> %s</div>
+          <div class="kv"><b>jQuery:</b> %s</div>
+        </div>
+      </div>
+        </div>
+
+        <!-- SECCIÓN UI/UX -->
+    <div class="main-section">
+      <div class="main-section-title">🎨 SECCIÓN UI/UX</div>
+      
+      <div class="subsection">
+        <div class="subsection-title">Core Web Vitals (PageSpeed)</div>
+        <div class="body">
+          <div class="kv"><b>LCP:</b> %s ms</div>
+          <div class="kv"><b>CLS:</b> %s</div>
+          <div class="kv"><b>INP:</b> %s ms</div>
+          <div class="kv"><b>Score (mobile):</b> %s</div>
+          <div class="kv"><b>Score (desktop):</b> %s</div>
+        </div>
+      </div>
+
+      <div class="subsection">
+        <div class="subsection-title">Análisis de UX/UI Detallado</div>
+        <div class="body">
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🖼️ Imágenes Rotas</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📝 Alt Text Faltante</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📋 Formularios</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔘 Botones</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔗 Enlaces</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎥 Media</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">♿ Accesibilidad</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">⚡ Rendimiento</h3>
+          %s
+        </div>
+      </div>
+
+      <div class="subsection">
+        <div class="subsection-title">UX/UI y Accesibilidad</div>
+        <div class="body">
+          <div class="kv"><b>Violaciones WCAG (axe):</b> %s</div>
+          <div class="kv"><b>CrUX p75 LCP:</b> %s ms</div>
+          <div class="kv"><b>CrUX p75 INP:</b> %s ms</div>
+          <div class="kv"><b>CrUX p75 CLS:</b> %s</div>
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">Heurísticas UX detectadas</h3>
+          %s
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">Recomendaciones</h3>
+          %s
+        </div>
+      </div>
+    </div>
+
+        <!-- SECCIÓN SEGURIDAD -->
+    <div class="main-section">
+      <div class="main-section-title">🛡️ SECCIÓN SEGURIDAD</div>
+      
+      <div class="subsection">
         <div class="subsection-title">Detección de Malware (crawling + DOM)</div>
-  <div class="body">
-    <div class="kv"><b>Infección detectada:</b> %s</div>
-    <h3 style="margin:6mm 0 2mm 0;font-size:14px">URLs sospechosas</h3>
-    %s
-    <h3 style="margin:6mm 0 2mm 0;font-size:14px">Evidencias (snippets)</h3>
-    %s
-  </div>
-</div>
+        <div class="body">
+          <div class="kv"><b>Infección detectada:</b> %s</div>
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">URLs sospechosas</h3>
+          %s
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">Evidencias (snippets)</h3>
+          %s
+        </div>
+      </div>
 
       <div class="subsection">
         <div class="subsection-title">APIs de Seguridad</div>
@@ -3070,17 +3034,17 @@ def print_report(rid):
           <div class="kv"><b>Estado:</b> %s</div>
           <div class="kv"><b>Detalles:</b></div>
           %s
-
+          
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🛡️ VirusTotal</h3>
           <div class="kv"><b>Estado:</b> %s</div>
           <div class="kv"><b>Detalles:</b></div>
           %s
-
+          
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🚨 URLHaus</h3>
           <div class="kv"><b>Estado:</b> %s</div>
           <div class="kv"><b>Detalles:</b></div>
           %s
-
+          
           <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎣 PhishTank</h3>
           <div class="kv"><b>Estado:</b> %s</div>
           <div class="kv"><b>Detalles:</b></div>
@@ -3088,7 +3052,37 @@ def print_report(rid):
         </div>
       </div>
 
-
+      <div class="subsection">
+        <div class="subsection-title">Análisis de Contenido Sospechoso</div>
+        <div class="body">
+          <div class="kv"><b>Nivel de Riesgo:</b> %s</div>
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🎰 Contenido de Casino/Juegos</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">📧 Contenido Spam</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">⚠️ Patrones Maliciosos</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🔗 Enlaces Sospechosos</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">💻 Scripts Sospechosos</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🖼️ Imágenes Sospechosas</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">🌐 Recursos Externos</h3>
+          %s
+          
+          <h3 style="margin:6mm 0 2mm 0;font-size:14px">👁️ Elementos Ocultos</h3>
+          %s
+        </div>
+      </div>
+    </div>
 
     <div class="section no-break">
       <div class="title">Acciones sugeridas</div>
@@ -3101,8 +3095,7 @@ def print_report(rid):
     </div>
 
     <div class="footer">IDEI Auditor · %s · <span class="pnum"></span></div>
-  <!-- filler %s -->
-</div>
+  </div>
 
   <script>
     (function autoPrint() {
@@ -3165,8 +3158,8 @@ def print_report(rid):
             headers_html,
             cookies_html,
 
-            # *** OJO: AQUÍ YA NO INYECTAMOS mixed_html ***
-            # para que SOLO aparezca en su sección "Contenido mixto" más abajo
+            # *** OJO: mixed_html se inyecta en la sección "Análisis de Contenido" ***
+            # para que aparezca en su sección "Contenido mixto" correspondiente
             # mantenemos el orden y no agregamos variables extra
 
             # archivos/dirs
@@ -3217,7 +3210,7 @@ def print_report(rid):
             yn(seo.get("mailto_found")),
 
             # *** SECCIÓN CONTENIDO MIXTO (ÚNICO LUGAR DONDE VA) ***
-            mixed_html,
+            # mixed_html,  # <-- Movido a la sección de Análisis de Contenido
 
             # Meta Tags y Schema
             yn(seo.get("canonical")),
@@ -3239,7 +3232,7 @@ def print_report(rid):
 
             # Análisis de Contenido
             risk_html,
-            "" ,  # <-- NO duplicar mixed_html aquí
+            mixed_html,  # <-- Contenido mixto aquí
             casino_html,
             spam_html,
             malicious_html,
