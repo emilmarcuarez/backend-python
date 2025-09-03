@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter, Retry
 from service.ux import crux_site, axe_scan, heuristics_ux
 from service.malware import scan_site_malware
+from auth import hash_password, verify_password, generate_token, token_required, get_current_user
 # --- Jobs simples en memoria (rápido y sin dependencias) ---
 import threading, time, uuid
 from typing import Dict, Any
@@ -35,7 +36,6 @@ load_dotenv()
 
 db_url = os.environ.get("DATABASE_URL", "").strip()
 if not db_url:
-
     db_url = "sqlite:///app.db"
 
 if db_url.startswith("postgresql://"):
@@ -55,10 +55,21 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
 
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(50), unique=True, nullable=False)
+    email = Column(String(100), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Site(Base):
     __tablename__ = "sites"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    url = Column(String(512), unique=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    url = Column(String(512), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -80,6 +91,7 @@ app = Flask(__name__)
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
+    "http://localhost:4173",  # Puerto de preview de Vite
     "https://analisis.ideidev.com",
     "https://proper-arline-ideidev-d91f3d2e.koyeb.app"  # Agregar el dominio de Koyeb
 ]
@@ -1819,6 +1831,149 @@ def test_cors():
         "origin": request.headers.get("Origin", "unknown")
     })
 
+# ------------------ AUTHENTICATION ENDPOINTS ------------------
+@app.route("/auth/register", methods=["POST"])
+@cross_origin(
+    origins="*",
+    methods=["POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    max_age=86400,
+)
+def register():
+    """Register a new user"""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        username = data.get("username", "").strip()
+        email = data.get("email", "").strip()
+        password = data.get("password", "").strip()
+        
+        # Validaciones básicas
+        if not username or not email or not password:
+            return jsonify({"error": "Username, email and password are required"}), 400
+        
+        if len(password) < 6:
+            return jsonify({"error": "Password must be at least 6 characters long"}), 400
+        
+        if len(username) < 3:
+            return jsonify({"error": "Username must be at least 3 characters long"}), 400
+        
+        # Verificar si el usuario ya existe
+        db = SessionLocal()
+        try:
+            from sqlalchemy import text
+            existing_user = db.execute(
+                text("SELECT id FROM users WHERE username = :username OR email = :email"),
+                {"username": username, "email": email}
+            ).fetchone()
+            
+            if existing_user:
+                return jsonify({"error": "Username or email already exists"}), 400
+            
+            # Crear nuevo usuario
+            password_hash = hash_password(password)
+            result = db.execute(
+                text("INSERT INTO users (username, email, password_hash) VALUES (:username, :email, :password_hash)"),
+                {"username": username, "email": email, "password_hash": password_hash}
+            )
+            db.commit()
+            
+            user_id = result.lastrowid
+            
+            # Generar token
+            token = generate_token(user_id, username)
+            
+            return jsonify({
+                "message": "User registered successfully",
+                "token": token,
+                "user": {
+                    "id": user_id,
+                    "username": username,
+                    "email": email
+                }
+            }), 201
+            
+        except Exception as e:
+            db.rollback()
+            return jsonify({"error": "Database error occurred"}), 500
+        finally:
+            db.close()
+            
+    except Exception as e:
+        return jsonify({"error": "Invalid request data"}), 400
+
+@app.route("/auth/login", methods=["POST"])
+@cross_origin(
+    origins="*",
+    methods=["POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    max_age=86400,
+)
+def login():
+    """Login user"""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        username = data.get("username", "").strip()
+        password = data.get("password", "").strip()
+        
+        if not username or not password:
+            return jsonify({"error": "Username and password are required"}), 400
+        
+        db = SessionLocal()
+        try:
+            from sqlalchemy import text
+            user = db.execute(
+                text("SELECT id, username, email, password_hash FROM users WHERE username = :username"),
+                {"username": username}
+            ).fetchone()
+            
+            if not user:
+                return jsonify({"error": "Invalid credentials"}), 401
+            
+            if not verify_password(password, user.password_hash):
+                return jsonify({"error": "Invalid credentials"}), 401
+            
+            # Generar token
+            token = generate_token(user.id, user.username)
+            
+            return jsonify({
+                "message": "Login successful",
+                "token": token,
+                "user": {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email
+                }
+            }), 200
+            
+        except Exception as e:
+            return jsonify({"error": "Database error occurred"}), 500
+        finally:
+            db.close()
+            
+    except Exception as e:
+        return jsonify({"error": "Invalid request data"}), 400
+
+@app.route("/auth/me", methods=["GET"])
+@token_required
+@cross_origin(
+    origins="*",
+    methods=["GET", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    max_age=86400,
+)
+def get_current_user_info():
+    """Get current user information"""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({"error": "User not found"}), 404
+    
+    return jsonify({
+        "user": {
+            "id": current_user["user_id"],
+            "username": current_user["username"]
+        }
+    }), 200
+
 @app.route("/scan", methods=["POST"])
 def scan():
     data = request.get_json(force=True, silent=True) or {}
@@ -1833,6 +1988,7 @@ def scan():
     return jsonify(rep)
 
 @app.route("/scan-save", methods=["POST"])
+@token_required
 @cross_origin(
   origins="*",  # Permitir todos los orígenes
   methods=["POST", "OPTIONS"],
@@ -1858,12 +2014,15 @@ def scan_save():
             return jsonify({"detail": "El sitio no parece ser WordPress (heurística)."}), 400
 
         # Guardar en base de datos
+        current_user = get_current_user()
+        user_id = current_user["user_id"]
+        
         db = SessionLocal()
         try:
-            # busca o crea el Site
-            site = db.query(Site).filter(Site.url == url).one_or_none()
+            # busca o crea el Site para este usuario específico
+            site = db.query(Site).filter(Site.url == url, Site.user_id == user_id).one_or_none()
             if not site:
-                site = Site(url=url)
+                site = Site(url=url, user_id=user_id)
                 db.add(site)
                 db.commit()
                 db.refresh(site)
@@ -1917,11 +2076,15 @@ def scan_save_async():
     return jsonify({"accepted": True, "job_id": job_id}), 202
 
 @app.route("/reports", methods=["GET"])
+@token_required
 def list_reports():
     limit = int(request.args.get("limit", 100))
+    current_user = get_current_user()
+    user_id = current_user["user_id"]
+    
     db = SessionLocal()
     try:
-        rows = db.query(Report, Site).join(Site, Report.site_id==Site.id).order_by(Report.id.desc()).limit(limit).all()
+        rows = db.query(Report, Site).join(Site, Report.site_id==Site.id).filter(Site.user_id==user_id).order_by(Report.id.desc()).limit(limit).all()
         out = []
         for rep, site in rows:
             out.append({"id": rep.id, "site_id": site.id, "url": site.url, "score": rep.score, "created_at": rep.created_at.isoformat()})
@@ -1930,10 +2093,14 @@ def list_reports():
         db.close()
 
 @app.route("/reports/<int:rid>", methods=["GET"])
+@token_required
 def get_report(rid):
+    current_user = get_current_user()
+    user_id = current_user["user_id"]
+    
     db = SessionLocal()
     try:
-        row = db.query(Report, Site).join(Site, Report.site_id==Site.id).filter(Report.id==rid).one_or_none()
+        row = db.query(Report, Site).join(Site, Report.site_id==Site.id).filter(Report.id==rid, Site.user_id==user_id).one_or_none()
         if not row:
             return jsonify({"detail":"Reporte no encontrado"}), 404
         rep_obj, site = row
@@ -1954,13 +2121,20 @@ def scan_status():
 
 
 @app.route("/reports/<int:rid>", methods=["DELETE"])
+@token_required
 def delete_report(rid):
+    current_user = get_current_user()
+    user_id = current_user["user_id"]
+    
     db = SessionLocal()
     try:
-        r = db.query(Report).get(rid)
-        if not r:
+        # Verificar que el reporte pertenece al usuario
+        row = db.query(Report, Site).join(Site, Report.site_id==Site.id).filter(Report.id==rid, Site.user_id==user_id).one_or_none()
+        if not row:
             return jsonify({"detail":"Reporte no encontrado"}), 404
-        db.delete(r)
+        
+        rep_obj, site = row
+        db.delete(rep_obj)
         db.commit()
         return Response(status=204)
     finally:
