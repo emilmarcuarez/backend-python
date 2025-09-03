@@ -1026,6 +1026,54 @@ def seo_extract(html_text):
             out["robots_meta"] = rb.group(1).strip().lower()
     except Exception:
         pass
+    
+    # Extraer datos de enlaces
+    try:
+        # Buscar todos los enlaces
+        links = re.findall(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>', html_text, re.I)
+        
+        internal_links = 0
+        external_links = 0
+        broken_links = 0
+        nofollow_links = 0
+        dofollow_links = 0
+        mailto_links = 0
+        
+        for href in links:
+            href_lower = href.lower()
+            
+            # Contar mailto
+            if href_lower.startswith('mailto:'):
+                mailto_links += 1
+            # Contar enlaces internos (relativos o mismo dominio)
+            elif href_lower.startswith('/') or href_lower.startswith('#') or not href_lower.startswith('http'):
+                internal_links += 1
+            # Contar enlaces externos
+            else:
+                external_links += 1
+            
+            # Verificar nofollow/dofollow
+            if 'nofollow' in href_lower:
+                nofollow_links += 1
+            else:
+                dofollow_links += 1
+        
+        out["internal_links"] = internal_links
+        out["external_links"] = external_links
+        out["broken_links"] = broken_links  # Por ahora 0, se podría implementar verificación
+        out["nofollow_links"] = nofollow_links
+        out["dofollow_links"] = dofollow_links
+        out["mailto_found"] = mailto_links > 0
+        
+    except Exception:
+        # Si hay error, establecer valores por defecto
+        out["internal_links"] = 0
+        out["external_links"] = 0
+        out["broken_links"] = 0
+        out["nofollow_links"] = 0
+        out["dofollow_links"] = 0
+        out["mailto_found"] = False
+    
     return out
 
 def compute_score_with_details(report):
